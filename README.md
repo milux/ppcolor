@@ -9,10 +9,12 @@ Combined with a MIDI-capable light control system is meant to provide an "Ambili
 The tool was tested with **ProPresenter** background videos, **Native Instruments Komplete Audio 6** sound/MIDI interface and a **grandMA2 onPC** light control system.
 
 ## Requirements
-Java SE 8.0 or higher with `javax.sound.midi` available
+JDK 8.0 or higher with `javax.sound.midi` available
 
 ## Usage
-`java -jar ppcolor.jar`
+Build with `./gradlew jar proguard`
+
+Run with `java -jar ppcolor-<version>.jar`
 
 ## Output
 The program will print 2 Color values for every measurement:
