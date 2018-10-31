@@ -51,4 +51,5 @@ githubRelease {
     repo "ppcolor"
     tagName "${version}"
     releaseAssets "releases/ppcolor-${version}.jar"
+    overwrite true
 }
