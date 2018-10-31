@@ -1,28 +1,27 @@
 buildscript {
-    ext.kotlin_version = '1.3.0'
-
     repositories {
         mavenCentral()
         flatDir dirs: "C:\\proguard\\lib"
     }
     dependencies {
         classpath ":proguard:"
-        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
 
-group 'ppcolor'
-version '1.0.1'
+plugins {
+    id "org.jetbrains.kotlin.jvm" version "1.3.0"
+    id "com.github.breadmoirai.github-release" version "2.2.0"
+}
 
-apply plugin: 'kotlin'
-apply plugin: 'application'
+group 'de.milux.ppcolor'
+version '1.0.2'
 
 repositories {
     mavenCentral()
 }
 
 dependencies {
-    compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+    compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
 }
 
 compileKotlin {
@@ -43,4 +42,13 @@ task proguard(type: proguard.gradle.ProGuardTask) {
     configuration file('proguard.txt')
     injars "build/libs/de.milux.ppcolor-${version}.jar"
     outjars "releases/ppcolor-${version}.jar"
+}
+proguard.dependsOn jar
+
+githubRelease {
+    token getProperty('github.token')
+    owner "milux"
+    repo "ppcolor"
+    tagName "${version}"
+    releaseAssets "releases/ppcolor-${version}.jar"
 }
