@@ -12,7 +12,7 @@ The tool was tested with **ProPresenter** background videos, **Native Instrument
 JDK 8.0 or higher with `javax.sound.midi` available
 
 ## Usage
-Build with `./gradlew jar proguard`
+Build with `./gradlew jar proguard` or take pre-built release from `releases` directory
 
 Run with `java -jar ppcolor-<version>.jar`
 

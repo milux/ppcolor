@@ -41,6 +41,6 @@ jar {
 
 task proguard(type: proguard.gradle.ProGuardTask) {
     configuration file('proguard.txt')
-    injars 'build\\libs\\de.milux.ppcolor-1.0-SNAPSHOT.jar'
-    outjars 'ppcolor-1.0-SNAPSHOT.jar'
+    injars "build/libs/de.milux.ppcolor-${version}.jar"
+    outjars "releases/ppcolor-${version}.jar"
 }
