@@ -1,7 +1,12 @@
 buildscript {
+    // Platform-dependent paths, adjust for proguard execution
+    ext {
+        proguardPath = "C:\\proguard\\lib"
+        rtJarPath = "C:\\Program Files\\Java\\jdk1.8.0_192\\jre\\lib\\rt.jar"
+    }
     repositories {
         mavenCentral()
-        flatDir dirs: "C:\\proguard\\lib"
+        flatDir dirs: proguardPath
     }
     dependencies {
         classpath ":proguard:"
@@ -14,7 +19,7 @@ plugins {
 }
 
 group 'de.milux.ppcolor'
-version '1.0.2'
+version '1.1.0'
 
 repositories {
     mavenCentral()
@@ -40,6 +45,7 @@ jar {
 
 task proguard(type: proguard.gradle.ProGuardTask) {
     configuration file('proguard.txt')
+    libraryjars rtJarPath
     injars "build/libs/de.milux.ppcolor-${version}.jar"
     outjars "releases/ppcolor-${version}.jar"
 }
