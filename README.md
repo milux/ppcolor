@@ -4,7 +4,7 @@ Send dominant color of 2nd screen as MIDI notes
 ## Idea
 This tool measures the dominant color of the second screen and sends it as 3 MIDI notes to another device.
 
-Combined with a MIDI-capable light control system is meant to provide an "Ambilight-like" experience for videos, presentations, etc.
+Combined with a MIDI-capable light control system this is meant to provide an "Ambilight-like" experience for videos, presentations, etc.
 
 The tool was tested with **ProPresenter** background videos, **Native Instruments Komplete Audio 6** sound/MIDI interface and a **grandMA2 onPC** light control system.
 
@@ -19,6 +19,5 @@ Run with `java -jar ppcolor-<version>.jar`
 ## Output
 The program will print 2 Color values for every measurement:
 
-- The average color resulting from the top N/4 (default: N=400) values taken from the latest screenshot, weighted as (R+B+G)
-- The resulting color after transformation to HSB, modification with saturation (S) to 1.0 (maximum saturation),
-and normalization of the resulting color, such that the dominant RGB color channels(s) are 255.
+- The average color resulting from the top N (default: N <= 100) values taken from the latest screenshot, weighted with Saturation x Brightness
+- The resulting color after transformation to HSB and modification of saturation (S) and brightness (B) to 1.0 (maximum saturation/brightness)
