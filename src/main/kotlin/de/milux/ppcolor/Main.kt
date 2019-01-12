@@ -1,100 +1,112 @@
 package de.milux.ppcolor
 
-import java.awt.*
+import de.milux.ppcolor.ml.DBSCANExecutor
+import de.milux.ppcolor.ml.HuePoint
+import org.slf4j.LoggerFactory
+import java.awt.Color
+import java.awt.GraphicsEnvironment
+import java.io.File
 import java.io.RandomAccessFile
+import java.lang.Math.round
 import java.lang.Thread.sleep
 import java.util.*
-import kotlin.math.abs
-import kotlin.math.max
+import java.util.concurrent.Executors
+import javax.imageio.ImageIO
 import kotlin.system.exitProcess
 
 const val MIN_ROUND_TIME = 100L
-val SCALE_FACTOR = Toolkit.getDefaultToolkit().screenResolution / 96.0
-const val STEPS_X = 20
-const val STEPS_Y = 20
-const val RGB_MIN_DIFF = 25
+const val STEPS_X = 24
+const val STEPS_Y = 13
+const val TARGET_SCREEN = 2
+const val N_COLORS = 2
+val logger = LoggerFactory.getLogger("de.milux.ppcolor")!!
 
 fun main(args : Array<String>) {
+    // https://get.videolan.org/vlc/2.2.5.1/win64/vlc-2.2.5.1-win64.7z
+    System.setProperty("jna.library.path", "vlc")
+
     val lockFile = RandomAccessFile("ppcolor.lock", "rw")
     val lock = lockFile.channel.tryLock()
     if (lock == null) {
-        println("Already running!")
+        logger.error("Already running!")
         exitProcess(1)
     }
 
     val screenDevices = GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices
     if (screenDevices.size < 2) {
-        println("No Second Screen detected!")
+        logger.error("No Second Screen detected!")
         exitProcess(2)
     }
-    val screenBounds = screenDevices[1].defaultConfiguration.bounds
-    val robot = Robot()
-    val calcThread = CalcThread()
-    val ssRectangle = Rectangle(
-            (screenBounds.x / SCALE_FACTOR).toInt(),
-            (screenBounds.y / SCALE_FACTOR).toInt(),
-            (screenBounds.width / SCALE_FACTOR).toInt(),
-            (screenBounds.height / SCALE_FACTOR).toInt()
-    )
+    screenDevices.forEachIndexed { i, device -> logger.info("Device ${i + 1}: ${device.defaultConfiguration.bounds}") }
 
-    val stepX = ((screenBounds.width - 1) / SCALE_FACTOR) / STEPS_X
-    val stepY = ((screenBounds.height - 1) / SCALE_FACTOR) / STEPS_Y
-    val numValues = STEPS_X * STEPS_Y / 4
+    val screenDevice = screenDevices[TARGET_SCREEN - 1]
+    val screenBounds = screenDevice.defaultConfiguration.bounds
+    val screenTransform = screenDevice.defaultConfiguration.defaultTransform
+    val screenWidth = round(screenBounds.width * screenTransform.scaleX).toInt()
+    val screenHeight = round(screenBounds.height * screenTransform.scaleY).toInt()
+
+    val captureThread = VLCCapture(screenDevice)
+    val calcThread = MidiThread()
+
+    val rawList = ArrayList<Color>((STEPS_X + 1) * (STEPS_Y + 1))
+    val stepX = (screenWidth - 1) / (STEPS_X - 1)
+    val stepY = (screenHeight - 1) / (STEPS_Y - 1)
+
+    var run = 0L
+    val executor = Executors.newFixedThreadPool(1)
 
     while(true) {
         val time = System.currentTimeMillis()
 
-        val rawList = ArrayList<Color>()
-
-        val image = robot.createScreenCapture(ssRectangle)
-//        ImageIO.write(image, "png", File("ss" + System.currentTimeMillis() + ".png"))
+        val image = captureThread.getImage()
+        if (logger.isDebugEnabled && ++run % 10L == 0L) {
+            executor.submit {
+                ImageIO.write(image, "jpg", File("ss" + System.currentTimeMillis() + ".jpg"))
+            }
+        }
         val colorModel = image.colorModel
 
-        for (sx in 0 .. STEPS_X) {
-            for (sy in 0 .. STEPS_Y) {
-                val rgb = image.getRGB((sx * stepX).toInt(), (sy * stepY).toInt())
+        rawList.clear()
+        for (sx in 0 until STEPS_X) {
+            for (sy in 0 until STEPS_Y) {
+                val rgb = image.getRGB(sx * stepX, sy * stepY)
                 val color = Color(colorModel.getRed(rgb), colorModel.getGreen(rgb), colorModel.getBlue(rgb))
                 rawList += color
             }
         }
 
-        // Take the upper quarter with the brightest values
-        val sortedColors = rawList
-                .filter { abs(it.red - it.green) > RGB_MIN_DIFF
-                        || abs(it.green - it.blue) > RGB_MIN_DIFF
-                        || abs(it.red - it.blue) > RGB_MIN_DIFF }
-                .sortedBy {
-                    val hsb = Color.RGBtoHSB(it.red, it.green, it.blue, null)
-                    hsb[1] * hsb[2]
-                }
-        // Only execute if we have color values
-        if (sortedColors.isNotEmpty()) {
-            val colorList = sortedColors
-                    .slice(max(0, sortedColors.size - numValues) until sortedColors.size)
+        // Calculate HSB colors with a saturation-brightness-product of at least 0.1
+        val huePoints = rawList.map { Color.RGBtoHSB(it.red, it.green, it.blue, null) }
+                // Create Pairs with hue value and weight (saturation * brightness), sorted by hue value
+                .map { HuePoint(it[0], it[1].toDouble() * it[2]) }
+                // Filter totally black/gray pixels
+                .filter { it.weight != .0 }
 
-            val clSize = colorList.size
-            val mainColor = Color(
-                    colorList.sumBy { it.red } / clSize,
-                    colorList.sumBy { it.green } / clSize,
-                    colorList.sumBy { it.blue } / clSize
-            )
-            print(mainColor)
-
-            val hsb = Color.RGBtoHSB(mainColor.red, mainColor.green, mainColor.blue, null)
-            // Maximize saturation and brightness
-            val satColor = Color.getHSBColor(hsb[0], 1.0f, 1.0f)
-
-            print(" -> ")
-            print(satColor)
-            println()
-
-            calcThread.setTargetColor(satColor)
+        // Don't perform any update if image is predominantly grey
+        if (huePoints.any { it.weight > 0.1 }) {
+//            val startKMeans = System.currentTimeMillis()
+//            val hueMeans = HueKMeans().getKMeans(huePoints)
+//            logger.info("HueKMeans results: ${hueMeans?.joinToString()}, " +
+//                    "time: ${System.currentTimeMillis() - startKMeans}")
+//            if (hueMeans != null) {
+//                calcThread.submitHueValues(hueMeans.toList())
+//            }
+            val startDBSCAN = System.currentTimeMillis()
+            val hueClusters = DBSCANExecutor(huePoints).findCenters()
+            logger.info("DBSCANExecutor results: ${hueClusters?.joinToString()}, " +
+                    "time: ${System.currentTimeMillis() - startDBSCAN}")
+            if (hueClusters != null) {
+                calcThread.submitHueValues(hueClusters.toList())
+            }
         }
 
         // Sleep after each cycle until MIN_ROUND_TIME ms are over
         val sleepTime = MIN_ROUND_TIME - (System.currentTimeMillis() - time)
         if (sleepTime > 0) {
-            sleep(System.currentTimeMillis() - time)
+            logger.trace("Sleep $sleepTime ms")
+            sleep(sleepTime)
+        } else {
+            logger.debug("Round time has been exceeded: $sleepTime")
         }
     }
 }
