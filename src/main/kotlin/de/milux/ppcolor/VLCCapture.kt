@@ -11,7 +11,7 @@ import java.awt.image.DataBufferInt
 
 
 class VLCCapture(screenDevice: GraphicsDevice) : Thread() {
-    private val image: BufferedImage
+    val image: BufferedImage
     private val factory: MediaPlayerFactory
     private val mediaPlayer: DirectMediaPlayer
     private val options: Array<String>
@@ -43,13 +43,6 @@ class VLCCapture(screenDevice: GraphicsDevice) : Thread() {
 
     override fun run() {
         mediaPlayer.playMedia("screen://", *options)
-    }
-
-    fun getImage(): BufferedImage {
-        val cm = image.colorModel
-        val isAlphaPreMultiplied = cm.isAlphaPremultiplied
-        val raster = image.copyData(null)
-        return BufferedImage(cm, raster, isAlphaPreMultiplied, null)
     }
 
     private inner class RenderCallback internal constructor() :

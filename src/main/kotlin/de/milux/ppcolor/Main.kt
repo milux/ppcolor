@@ -11,6 +11,7 @@ import java.lang.Thread.sleep
 import java.util.*
 import java.util.concurrent.Executors
 import javax.imageio.ImageIO
+import kotlin.math.abs
 import kotlin.math.round
 import kotlin.system.exitProcess
 
@@ -58,7 +59,7 @@ fun main(args : Array<String>) {
     while(true) {
         val time = System.currentTimeMillis()
 
-        val image = captureThread.getImage()
+        val image = captureThread.image
         if (logger.isDebugEnabled && ++run % 10L == 0L) {
             executor.submit {
                 ImageIO.write(image, "jpg", File("ss" + System.currentTimeMillis() + ".jpg"))
