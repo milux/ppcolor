@@ -37,14 +37,9 @@ class DBSCANExecutor(hueList: List<HuePoint>) {
             runs++
             if (clusters.size >= N_COLORS) {
                 logger.trace("Found $N_COLORS clusters after $runs iterations with eps = $eps")
-                break
+                return clusters.sortedByDescending { it.points.size }
             }
             eps *= EPS_ANNEALING
-        }
-        if (clusters.size == N_COLORS) {
-            return clusters
-        } else if (clusters.size > N_COLORS) {
-            return clusters.sortedByDescending { it.points.size }.slice(0 until N_COLORS)
         }
         if (clusters.size < N_COLORS) {
             logger.warn("Found only ${clusters.size} clusters, skipping")
