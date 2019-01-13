@@ -71,6 +71,7 @@ class MidiThread : Thread() {
     override fun run() {
         val debugFrame = DebugFrame()
         while (true) {
+            val time = System.currentTimeMillis()
             // Synchronize color update
             synchronized(this) {
                 if (bufferList.size == BUFFER_SIZE) {
@@ -94,30 +95,30 @@ class MidiThread : Thread() {
 
             for (i in 0 until N_COLORS) {
                 val color = Color(
-                        sumsRed[i] / bufferList.size / 2,
-                        sumsGreen[i] / bufferList.size / 2,
-                        sumsBlue[i] / bufferList.size / 2)
-                if (i == 0) {
-                    DebugFrame.color1 = color
-                }
-                if (i == 1) {
-                    DebugFrame.color2 = color
-                }
-                sendNote((3 * i) + 1, color.red)
-                sendNote((3 * i) + 2, color.green)
-                sendNote((3 * i) + 3, color.blue)
+                        sumsRed[i] / bufferList.size,
+                        sumsGreen[i] / bufferList.size,
+                        sumsBlue[i] / bufferList.size)
+                DebugFrame.colors[i] = color
+                sendNote((3 * i) + 1, color.red / 2)
+                sendNote((3 * i) + 2, color.green / 2)
+                sendNote((3 * i) + 3, color.blue / 2)
             }
             if (debugFrame.isVisible) {
                 debugFrame.repaint()
             }
 
-            sleep(UPDATE_DELAY)
+            // Sleep after each cycle until MIN_ROUND_TIME ms are over
+            val sleepTime = MIN_ROUND_TIME - (System.currentTimeMillis() - time)
+            if (sleepTime > 0) {
+                sleep(sleepTime)
+            } else {
+                logger.debug("Round time has been exceeded: $sleepTime")
+            }
         }
     }
 
     companion object {
-        const val UPDATE_DELAY = 30L
         private const val FADE_TIME = 1000L
-        const val BUFFER_SIZE = (FADE_TIME / UPDATE_DELAY).toInt()
+        const val BUFFER_SIZE = (FADE_TIME / MIN_ROUND_TIME).toInt()
     }
 }

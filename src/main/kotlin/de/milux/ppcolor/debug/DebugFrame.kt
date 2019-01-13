@@ -1,5 +1,6 @@
 package de.milux.ppcolor.debug
 
+import de.milux.ppcolor.N_COLORS
 import org.slf4j.LoggerFactory
 import java.awt.Color
 import java.awt.Graphics
@@ -11,7 +12,7 @@ class DebugFrame : JFrame("Output colors") {
     init {
         defaultCloseOperation = JFrame.DISPOSE_ON_CLOSE
 
-        setSize(430, 220)
+        setSize(435, 310)
 
         if (logger.isDebugEnabled) {
             // If debug on, make JFrame visible
@@ -22,18 +23,22 @@ class DebugFrame : JFrame("Output colors") {
         }
     }
 
-    override fun paint(g: Graphics?) {
-        super.paint(g!!)
+    override fun paint(g: Graphics) {
+        super.paint(g)
 
-        g.color = color1
-        g.fillRect(10, 10, 200, 200)
-
-        g.color = color2
-        g.fillRect(220, 10, 200, 200)
+        colors.forEachIndexed { i, color ->
+            g.color = color
+            g.fillRect(10 + (i * 210), 40, 200, 255)
+            g.color = Color.RED
+            g.fillRect(10 + (i * 210), 40, 10, color.red)
+            g.color = Color.GREEN
+            g.fillRect(20 + (i * 210), 40, 10, color.green)
+            g.color = Color.BLUE
+            g.fillRect(30 + (i * 210), 40, 10, color.blue)
+        }
     }
 
     companion object {
-        var color1 = Color.BLACK!!
-        var color2 = Color.BLACK!!
+        var colors = Array<Color>(N_COLORS) { Color.BLACK }
     }
 }
