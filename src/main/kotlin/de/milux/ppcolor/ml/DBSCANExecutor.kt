@@ -54,8 +54,8 @@ class DBSCANExecutor(hueList: List<HuePoint>) {
     }
 
     companion object {
-        const val EPS_ANNEALING = .9
+        const val EPS_ANNEALING = .8
         const val MAX_EPS = .1
-        const val MIN_PTS_FACTOR = .05
+        const val MIN_PTS_FACTOR = .1
     }
 }
