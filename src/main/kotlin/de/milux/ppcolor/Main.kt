@@ -7,17 +7,17 @@ import java.awt.Color
 import java.awt.GraphicsEnvironment
 import java.io.File
 import java.io.RandomAccessFile
-import java.lang.Math.round
 import java.lang.Thread.sleep
 import java.util.*
 import java.util.concurrent.Executors
 import javax.imageio.ImageIO
+import kotlin.math.round
 import kotlin.system.exitProcess
 
 const val MIN_ROUND_TIME = 100L
 const val STEPS_X = 24
 const val STEPS_Y = 13
-const val TARGET_SCREEN = 2
+const val TARGET_SCREEN = 1
 const val N_COLORS = 2
 val logger = LoggerFactory.getLogger("de.milux.ppcolor")!!
 
@@ -78,7 +78,7 @@ fun main(args : Array<String>) {
         // Calculate HSB colors with a saturation-brightness-product of at least 0.1
         val huePoints = rawList.map { Color.RGBtoHSB(it.red, it.green, it.blue, null) }
                 // Create Pairs with hue value and weight (saturation * brightness), sorted by hue value
-                .map { HuePoint(it[0], it[1].toDouble() * it[2]) }
+                .map { HuePoint(it[0], (it[1] * it[2]).toDouble()) }
                 // Filter totally black/gray pixels
                 .filter { it.weight != .0 }
 

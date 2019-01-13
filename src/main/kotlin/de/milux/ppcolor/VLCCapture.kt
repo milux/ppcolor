@@ -29,7 +29,7 @@ class VLCCapture(screenDevice: GraphicsDevice) : Thread() {
         image.accelerationPriority = 1.0f
 
         options = arrayOf(":screen-fps=10", ":live-caching=0",
-//                ":screen-width=$width", ":screen-height=$height",
+                ":screen-width=$width", ":screen-height=$height",
                 ":screen-left=${screenBounds.x}", ":screen-top=${screenBounds.y}")
         logger.info("Player options: ${options.joinToString()}")
         factory = MediaPlayerFactory()

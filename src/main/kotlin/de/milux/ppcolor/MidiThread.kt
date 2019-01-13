@@ -1,6 +1,7 @@
 package de.milux.ppcolor
 
 import blogspot.software_and_algorithms.stern_library.optimization.HungarianAlgorithm
+import de.milux.ppcolor.debug.DebugFrame
 import de.milux.ppcolor.ml.HueKMeans.Companion.cyclicDistance
 import java.awt.Color
 import java.util.*
@@ -68,6 +69,7 @@ class MidiThread : Thread() {
     }
 
     override fun run() {
+        val debugFrame = DebugFrame()
         while (true) {
             // Synchronize color update
             synchronized(this) {
@@ -91,9 +93,22 @@ class MidiThread : Thread() {
             }
 
             for (i in 0 until N_COLORS) {
-                sendNote((3 * i) + 1, sumsRed[i] / bufferList.size / 2)
-                sendNote((3 * i) + 2, sumsGreen[i] / bufferList.size / 2)
-                sendNote((3 * i) + 3, sumsBlue[i] / bufferList.size / 2)
+                val color = Color(
+                        sumsRed[i] / bufferList.size / 2,
+                        sumsGreen[i] / bufferList.size / 2,
+                        sumsBlue[i] / bufferList.size / 2)
+                if (i == 0) {
+                    DebugFrame.color1 = color
+                }
+                if (i == 1) {
+                    DebugFrame.color2 = color
+                }
+                sendNote((3 * i) + 1, color.red)
+                sendNote((3 * i) + 2, color.green)
+                sendNote((3 * i) + 3, color.blue)
+            }
+            if (debugFrame.isVisible) {
+                debugFrame.repaint()
             }
 
             sleep(UPDATE_DELAY)

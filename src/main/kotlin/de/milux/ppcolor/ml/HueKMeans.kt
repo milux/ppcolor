@@ -1,7 +1,9 @@
 package de.milux.ppcolor.ml
 
 import de.milux.ppcolor.N_COLORS
-import java.lang.Math.*
+import kotlin.math.abs
+import kotlin.math.min
+import kotlin.random.Random
 
 class HueKMeans {
     private val centers = FloatArray(N_COLORS)
@@ -15,7 +17,7 @@ class HueKMeans {
             return null
         }
         for (i in 0 until N_COLORS) {
-            centers[i] = initList[(random() * initList.size).toInt()].hue
+            centers[i] = initList[Random.nextInt(initList.size)].hue
         }
 
         for (r in 1 .. 20) {
@@ -33,7 +35,7 @@ class HueKMeans {
             }
         }
 
-        // Replace invalid cluster(s) with hue of strongest cluster
+        // Replace empty cluster(s) with hue of strongest cluster
         adjustmentWeightSums.forEachIndexed { i, w ->
             if (w == 0f) {
                 val maxWeightSum = adjustmentWeightSums.withIndex().maxBy { it.value } ?: return null
