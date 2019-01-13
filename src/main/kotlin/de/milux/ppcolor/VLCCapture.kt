@@ -28,7 +28,7 @@ class VLCCapture(screenDevice: GraphicsDevice) : Thread() {
         image = screenDevice.defaultConfiguration.createCompatibleImage(width, height)
         image.accelerationPriority = 1.0f
 
-        options = arrayOf(":screen-fps=10", ":live-caching=0",
+        options = arrayOf(":screen-fps=${1000L / MIN_ROUND_TIME}", ":live-caching=0",
                 ":screen-width=$width", ":screen-height=$height",
                 ":screen-left=${screenBounds.x}", ":screen-top=${screenBounds.y}")
         logger.info("Player options: ${options.joinToString()}")
