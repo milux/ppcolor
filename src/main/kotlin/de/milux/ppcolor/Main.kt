@@ -107,7 +107,7 @@ fun main(args : Array<String>) {
             logger.trace("Sleep $sleepTime ms")
             sleep(sleepTime)
         } else {
-            logger.debug("Round time has been exceeded: $sleepTime")
+            logger.warn("Round time has been exceeded: $sleepTime")
         }
     }
 }

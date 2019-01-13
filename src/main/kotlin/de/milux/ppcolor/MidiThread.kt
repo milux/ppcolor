@@ -112,7 +112,7 @@ class MidiThread : Thread() {
             if (sleepTime > 0) {
                 sleep(sleepTime)
             } else {
-                logger.debug("Round time has been exceeded: $sleepTime")
+                logger.warn("Round time has been exceeded: $sleepTime")
             }
         }
     }
