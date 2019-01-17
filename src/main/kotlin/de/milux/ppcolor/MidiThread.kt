@@ -1,7 +1,6 @@
 package de.milux.ppcolor
 
 import blogspot.software_and_algorithms.stern_library.optimization.HungarianAlgorithm
-import de.milux.ppcolor.debug.DebugFrame
 import de.milux.ppcolor.ml.HueKMeans.Companion.cyclicDistance
 import java.awt.Color
 import java.util.*
@@ -51,30 +50,33 @@ class MidiThread : Thread() {
         }
     }
 
-    private fun sendNote(note: Int, value: Int) {
-        logger.debug("MIDI Note $note: $value")
+    private fun sendNotes(notes: Array<MidiNote>) {
         try {
             val deviceInfo = MidiSystem.getMidiDeviceInfo().firstOrNull {
-                it.name == "Komplete Audio 6 MIDI" && it.description.contains("MIDI")
+                it.name == MIDI_DEV_NAME && it.description.contains(MIDI_DEV_DESC_SUBSTR)
             } ?: return
             val device = MidiSystem.getMidiDevice(deviceInfo)
             device.open()
             // Send the MIDI message
             val myMsg = ShortMessage()
-            myMsg.setMessage(ShortMessage.NOTE_ON, 0, note, value)
-            device.receiver.send(myMsg, -1)
+            for (note in notes) {
+                logger.trace("MIDI Note ${note.note}: ${note.value}")
+                myMsg.setMessage(ShortMessage.NOTE_ON, 0, note.note, note.value)
+                device.receiver.send(myMsg, -1)
+            }
+//            device.close()
         } catch (x: Exception) {
-            x.printStackTrace()
+            logger.error("MIDI Error", x)
         }
     }
 
     override fun run() {
-        val debugFrame = DebugFrame()
+        val notes = Array(N_COLORS * 3) { MidiNote(0, 0) }
         while (true) {
             val time = System.currentTimeMillis()
             // Synchronize color update
             synchronized(this) {
-                if (bufferList.size == BUFFER_SIZE) {
+                if (bufferList.size == FADE_BUFFER_SIZE) {
                     val remColors = bufferList.first
                     remColors.forEachIndexed { i, remColor ->
                         sumsRed[i] -= remColor.red
@@ -94,18 +96,11 @@ class MidiThread : Thread() {
             }
 
             for (i in 0 until N_COLORS) {
-                val color = Color(
-                        sumsRed[i] / bufferList.size,
-                        sumsGreen[i] / bufferList.size,
-                        sumsBlue[i] / bufferList.size)
-                DebugFrame.colors[i] = color
-                sendNote((3 * i) + 1, color.red / 2)
-                sendNote((3 * i) + 2, color.green / 2)
-                sendNote((3 * i) + 3, color.blue / 2)
+                notes[(3 * i)] = MidiNote((3 * i) + 1, sumsRed[i] / bufferList.size / 2)
+                notes[(3 * i) + 1] = MidiNote((3 * i) + 2, sumsGreen[i] / bufferList.size / 2)
+                notes[(3 * i) + 2] = MidiNote((3 * i) + 3, sumsBlue[i] / bufferList.size / 2)
             }
-            if (debugFrame.isVisible) {
-                debugFrame.repaint()
-            }
+            sendNotes(notes)
 
             // Sleep after each cycle until MIN_ROUND_TIME ms are over
             val sleepTime = MIN_ROUND_TIME - (System.currentTimeMillis() - time)
@@ -115,10 +110,5 @@ class MidiThread : Thread() {
                 logger.warn("Round time has been exceeded: $sleepTime")
             }
         }
-    }
-
-    companion object {
-        private const val FADE_TIME = 1000L
-        const val BUFFER_SIZE = (FADE_TIME / MIN_ROUND_TIME).toInt()
     }
 }

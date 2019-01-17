@@ -5,22 +5,28 @@ import de.milux.ppcolor.ml.HuePoint
 import org.slf4j.LoggerFactory
 import java.awt.Color
 import java.awt.GraphicsEnvironment
+import java.awt.image.BufferedImage
 import java.io.File
 import java.io.RandomAccessFile
+import java.lang.Math.round
 import java.lang.Thread.sleep
 import java.util.*
 import java.util.concurrent.Executors
 import javax.imageio.ImageIO
-import kotlin.math.abs
-import kotlin.math.round
+import kotlin.random.Random
 import kotlin.system.exitProcess
 
-const val MIN_ROUND_TIME = 100L
-const val STEPS_X = 24
-const val STEPS_Y = 13
-const val TARGET_SCREEN = 1
+const val MIN_ROUND_TIME = 33L
+const val FADE_BUFFER_SIZE = 30
+const val STEPS_X = 16
+const val STEPS_Y = 9
+const val TARGET_SCREEN = 2
+const val MIDI_DEV_NAME = "Komplete Audio 6 MIDI"
+const val MIDI_DEV_DESC_SUBSTR = "MIDI"
 const val N_COLORS = 2
-val logger = LoggerFactory.getLogger("de.milux.ppcolor")!!
+const val MAX_RANDOM_LOOKUPS = 10000
+const val MIN_WEIGHT = .1
+val logger = LoggerFactory.getLogger("de.milux.ppcolor.MainKt")!!
 
 fun main(args : Array<String>) {
     // https://get.videolan.org/vlc/2.2.5.1/win64/vlc-2.2.5.1-win64.7z
@@ -49,7 +55,7 @@ fun main(args : Array<String>) {
     val captureThread = VLCCapture(screenDevice)
     val calcThread = MidiThread()
 
-    val rawList = ArrayList<Color>((STEPS_X + 1) * (STEPS_Y + 1))
+    val huePoints = ArrayList<HuePoint>((STEPS_X + 1) * (STEPS_Y + 1))
     val stepX = (screenWidth - 1) / (STEPS_X - 1)
     val stepY = (screenHeight - 1) / (STEPS_Y - 1)
 
@@ -60,31 +66,46 @@ fun main(args : Array<String>) {
         val time = System.currentTimeMillis()
 
         val image = captureThread.image
-        if (logger.isDebugEnabled && ++run % 10L == 0L) {
+        if (logger.isTraceEnabled && ++run % 10L == 0L) {
             executor.submit {
                 ImageIO.write(image, "jpg", File("ss" + System.currentTimeMillis() + ".jpg"))
             }
         }
-        val colorModel = image.colorModel
 
-        rawList.clear()
+        huePoints.clear()
+        // First use a fixed grid to extract pixels
+        val usedCoordinates = HashSet<Pair<Int, Int>>()
+        var nRandomLookups = 0
         for (sx in 0 until STEPS_X) {
             for (sy in 0 until STEPS_Y) {
-                val rgb = image.getRGB(sx * stepX, sy * stepY)
-                val color = Color(colorModel.getRed(rgb), colorModel.getGreen(rgb), colorModel.getBlue(rgb))
-                rawList += color
+                val x = sx * stepX
+                val y = sy * stepY
+                usedCoordinates += Pair(x, y)
+                val hp = getHuePoint(image, x, y)
+                if (hp != null) {
+                    huePoints += hp
+                }
             }
         }
 
-        // Calculate HSB colors with a saturation-brightness-product of at least 0.1
-        val huePoints = rawList.map { Color.RGBtoHSB(it.red, it.green, it.blue, null) }
-                // Create Pairs with hue value and weight (saturation * brightness), sorted by hue value
-                .map { HuePoint(it[0], (it[1] * it[2]).toDouble()) }
-                // Filter totally black/gray pixels
-                .filter { it.weight != .0 }
-
-        // Don't perform any update if image is predominantly grey
-        if (huePoints.any { it.weight > 0.1 }) {
+        // This is not a mistake! We want the same "random" sequence for each execution!
+        val rand = Random(42)
+        // If any valid pixels have been found
+        if (huePoints.isNotEmpty()) {
+            // Use random, unvisited coordinates to get additional pixels
+            val expectedPoints = STEPS_X * STEPS_Y
+            while (huePoints.size < expectedPoints && nRandomLookups < MAX_RANDOM_LOOKUPS) {
+                nRandomLookups++
+                val x = rand.nextInt(screenWidth)
+                val y = rand.nextInt(screenHeight)
+                val coordinates = Pair(x, y)
+                if (coordinates !in usedCoordinates) {
+                    usedCoordinates += coordinates
+                    val hp = getHuePoint(image, x, y)
+                    huePoints += hp ?: continue
+                }
+            }
+            // Use clustering algorithm to find clusters
 //            val startKMeans = System.currentTimeMillis()
 //            val hueMeans = HueKMeans().getKMeans(huePoints)
 //            logger.info("HueKMeans results: ${hueMeans?.joinToString()}, " +
@@ -104,10 +125,17 @@ fun main(args : Array<String>) {
         // Sleep after each cycle until MIN_ROUND_TIME ms are over
         val sleepTime = MIN_ROUND_TIME - (System.currentTimeMillis() - time)
         if (sleepTime > 0) {
-            logger.trace("Sleep $sleepTime ms")
             sleep(sleepTime)
         } else {
-            logger.warn("Round time has been exceeded: $sleepTime")
+            logger.debug("Round time has been exceeded: $sleepTime")
         }
     }
+}
+
+fun getHuePoint(image: BufferedImage, x: Int, y: Int): HuePoint? {
+    val rgb = image.getRGB(x, y)
+    val colorModel = image.colorModel
+    val hsb = Color.RGBtoHSB(colorModel.getRed(rgb), colorModel.getGreen(rgb), colorModel.getBlue(rgb), null)
+    val hp = HuePoint(hsb[0], hsb[1].toDouble() * hsb[2])
+    return if (hp.weight >= MIN_WEIGHT) hp else null
 }
