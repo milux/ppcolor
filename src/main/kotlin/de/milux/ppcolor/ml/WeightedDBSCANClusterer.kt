@@ -23,7 +23,6 @@ import org.apache.commons.math3.ml.clustering.Clusterable
 import org.apache.commons.math3.ml.clustering.Clusterer
 import org.apache.commons.math3.ml.distance.DistanceMeasure
 import org.apache.commons.math3.ml.distance.EuclideanDistance
-import org.apache.commons.math3.util.MathUtils
 import java.util.*
 
 /**
@@ -100,11 +99,7 @@ constructor(
      * @return the list of clusters
      * @throws NullArgumentException if the data points are null
      */
-    @Throws(NullArgumentException::class)
     override fun cluster(points: Collection<T>): List<Cluster<T>> {
-        // sanity checks
-        MathUtils.checkNotNull(points)
-
         val clusters = ArrayList<Cluster<T>>()
         val visited = HashMap<Clusterable, PointStatus>()
 
@@ -135,7 +130,7 @@ constructor(
      * @param visited the set of already visited points
      * @return the expanded cluster
      */
-    protected fun expandCluster(cluster: Cluster<T>,
+    protected open fun expandCluster(cluster: Cluster<T>,
                               point: T,
                               neighbors: List<T>,
                               points: Collection<T>,

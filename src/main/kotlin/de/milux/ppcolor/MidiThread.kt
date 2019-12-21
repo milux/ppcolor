@@ -1,19 +1,19 @@
 package de.milux.ppcolor
 
 import blogspot.software_and_algorithms.stern_library.optimization.HungarianAlgorithm
+import de.milux.ppcolor.debug.DebugFrame
 import de.milux.ppcolor.ml.HueKMeans.Companion.cyclicDistance
-import java.awt.Color
-import java.util.*
 import javax.sound.midi.MidiSystem
 import javax.sound.midi.ShortMessage
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 class MidiThread : Thread() {
-    private val bufferList = LinkedList<Array<Color>>()
-    private var sumsRed = IntArray(N_COLORS)
-    private var sumsGreen = IntArray(N_COLORS)
-    private var sumsBlue = IntArray(N_COLORS)
-    // Start black
-    private var targetColors = Array(N_COLORS) { Color.BLACK }
+    private val buffer = ColorBuffer(N_COLORS, BUFFER_SIZE)
+    private val outputColors = Array(N_COLORS) { FloatRGB(0f, 0f, 0f) }
+    private var lastTargetColors: List<RGB> = emptyList()
+    var midiStep = 0f
 
     init {
         this.isDaemon = true
@@ -23,37 +23,50 @@ class MidiThread : Thread() {
         start()
     }
 
-    fun submitHueValues(hueValues: List<Float>) {
-        val targetHues = hueValues.toFloatArray()
-        val averageHues: FloatArray
-        // Synchronized fetch of current average colors
-        synchronized(this) {
-            averageHues = FloatArray(N_COLORS) {
-                Color.RGBtoHSB(sumsRed[it] / bufferList.size, sumsGreen[it] / bufferList.size,
-                        sumsBlue[it] / bufferList.size, null)[0]
+    fun submitHueValues(hueLists: List<List<Float>>) {
+        if (hueLists.isEmpty()) {
+            return
+        }
+        var lowestCosts = Double.MAX_VALUE
+        var orderedTargetHues: List<Float> = emptyList()
+        for (hueValues in hueLists) {
+            val targetHues = hueValues.toFloatArray()
+            val medianHues: FloatArray
+            // Synchronized fetch of current average nColors
+            synchronized(this) {
+                medianHues = FloatArray(N_COLORS) {
+                    outputColors[it].hue
+                }
+            }
+            // Create cost matrix with medians as workers and target values as jobs
+            val costMatrix = Array(N_COLORS) { DoubleArray(targetHues.size) }
+            for (m in 0 until N_COLORS) {
+                for (t in targetHues.indices) {
+                    costMatrix[m][t] = cyclicDistance(medianHues[m], targetHues[t]).toDouble()
+                }
+            }
+            // Create hue List with ideal order (minimum difference between median and target hue over all indices)
+            val hunResult = HungarianAlgorithm(costMatrix).execute()
+            val costSum = hunResult.mapIndexed { m, t -> costMatrix[m][t] }.sum()
+            if (costSum < lowestCosts) {
+                lowestCosts = costSum
+                orderedTargetHues = hunResult.map { targetHues[it] }
             }
         }
-        // Create cost matrix with averages as workers and target values as jobs
-        val costMatrix = Array(N_COLORS) { DoubleArray(N_COLORS) }
-        for (a in 0 until N_COLORS) {
-            for (t in 0 until N_COLORS) {
-                costMatrix[a][t] = cyclicDistance(averageHues[a], targetHues[t]).toDouble()
-            }
-        }
-        // Create hue List with ideal order (minimum difference between average and target hue over all indices)
-        val orderedTargetHues = HungarianAlgorithm(costMatrix).execute().map { targetHues[it] }
-        logger.info("Learned hue centers: ${orderedTargetHues.joinToString { Math.round(it * 360).toString() }}")
-        val newTargetColors = Array(N_COLORS) { Color.getHSBColor(orderedTargetHues[it], 1f, 1f) }
-        // Synchronized set of new target colors
-        synchronized(this) {
-            this.targetColors = newTargetColors
-        }
+        logger.info("Learned hue centers: ${orderedTargetHues.joinToString { (it * 360).roundToInt().toString() }}")
+        // Push new target colors to buffer
+        lastTargetColors = orderedTargetHues.map { RGB.fromHSB(it) }
+        buffer += lastTargetColors
+    }
+
+    fun replayHueValues() {
+        buffer += lastTargetColors
     }
 
     private fun sendNotes(notes: Array<MidiNote>) {
         try {
             val deviceInfo = MidiSystem.getMidiDeviceInfo().firstOrNull {
-                it.name == MIDI_DEV_NAME && it.description.contains(MIDI_DEV_DESC_SUBSTR)
+                it.name == MIDI_DEV_NAME
             } ?: return
             val device = MidiSystem.getMidiDevice(deviceInfo)
             device.open()
@@ -64,7 +77,7 @@ class MidiThread : Thread() {
                 myMsg.setMessage(ShortMessage.NOTE_ON, 0, note.note, note.value)
                 device.receiver.send(myMsg, -1)
             }
-//            device.close()
+            device.close()
         } catch (x: Exception) {
             logger.error("MIDI Error", x)
         }
@@ -73,41 +86,35 @@ class MidiThread : Thread() {
     override fun run() {
         val notes = Array(N_COLORS * 3) { MidiNote(0, 0) }
         while (true) {
+            val midiMaxStep = max(midiStep, MIDI_MIN_STEP)
             val time = System.currentTimeMillis()
-            // Synchronize color update
-            synchronized(this) {
-                if (bufferList.size == FADE_BUFFER_SIZE) {
-                    val remColors = bufferList.first
-                    remColors.forEachIndexed { i, remColor ->
-                        sumsRed[i] -= remColor.red
-                        sumsGreen[i] -= remColor.green
-                        sumsBlue[i] -= remColor.blue
-                    }
-                    bufferList.removeFirst()
+            outputColors.forEachIndexed { i, outputColor ->
+                val average = buffer.getAveraged(i)
+                val rDiff = outputColor.red - average.red
+                val gDiff = outputColor.green - average.green
+                val bDiff = outputColor.blue - average.blue
+                val newOutputColor = FloatRGB(
+                        outputColor.red - (if (rDiff > 0) min(rDiff, midiMaxStep) else max(rDiff, -midiMaxStep)),
+                        outputColor.green - (if (gDiff > 0) min(gDiff, midiMaxStep) else max(gDiff, -midiMaxStep)),
+                        outputColor.blue - (if (bDiff > 0) min(bDiff, midiMaxStep) else max(bDiff, -midiMaxStep))
+                )
+                outputColors[i] = newOutputColor
+                if (SHOW_DEBUG_FRAME) {
+                    DebugFrame.colors[i] = average.color
+                    DebugFrame.outColors[i] = newOutputColor.color
                 }
-                // Color is immutable, so we can go without synchronization, just copying the reference
-                val recentColors: Array<Color> = this.targetColors.copyOf()
-                bufferList += recentColors
-                recentColors.forEachIndexed { i, recentColor ->
-                    sumsRed[i] += recentColor.red
-                    sumsGreen[i] += recentColor.green
-                    sumsBlue[i] += recentColor.blue
-                }
-            }
-
-            for (i in 0 until N_COLORS) {
-                notes[(3 * i)] = MidiNote((3 * i) + 1, sumsRed[i] / bufferList.size / 2)
-                notes[(3 * i) + 1] = MidiNote((3 * i) + 2, sumsGreen[i] / bufferList.size / 2)
-                notes[(3 * i) + 2] = MidiNote((3 * i) + 3, sumsBlue[i] / bufferList.size / 2)
+                notes[(3 * i)] = MidiNote((3 * i) + 1, (newOutputColor.red / 2).toInt())
+                notes[(3 * i) + 1] = MidiNote((3 * i) + 2, (newOutputColor.green / 2).toInt())
+                notes[(3 * i) + 2] = MidiNote((3 * i) + 3, (newOutputColor.blue / 2).toInt())
             }
             sendNotes(notes)
 
             // Sleep after each cycle until MIN_ROUND_TIME ms are over
-            val sleepTime = MIN_ROUND_TIME - (System.currentTimeMillis() - time)
+            val sleepTime = MIDI_ROUND_TIME - (System.currentTimeMillis() - time)
             if (sleepTime > 0) {
                 sleep(sleepTime)
             } else {
-                logger.warn("Round time has been exceeded: $sleepTime")
+                logger.warn("Round time has been exceeded by ${-sleepTime} ms")
             }
         }
     }

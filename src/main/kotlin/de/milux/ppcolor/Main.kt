@@ -1,36 +1,40 @@
 package de.milux.ppcolor
 
+import de.milux.ppcolor.debug.DebugFrame
 import de.milux.ppcolor.ml.DBSCANExecutor
+import de.milux.ppcolor.ml.HueKMeans
 import de.milux.ppcolor.ml.HuePoint
 import org.slf4j.LoggerFactory
-import java.awt.Color
 import java.awt.GraphicsEnvironment
 import java.awt.image.BufferedImage
 import java.io.File
 import java.io.RandomAccessFile
-import java.lang.Math.round
-import java.lang.Thread.sleep
 import java.util.*
 import java.util.concurrent.Executors
 import javax.imageio.ImageIO
-import kotlin.random.Random
+import kotlin.math.roundToInt
 import kotlin.system.exitProcess
 
-const val MIN_ROUND_TIME = 33L
-const val FADE_BUFFER_SIZE = 30
-const val STEPS_X = 16
-const val STEPS_Y = 9
-const val TARGET_SCREEN = 2
-const val MIDI_DEV_NAME = "Komplete Audio 6 MIDI"
-const val MIDI_DEV_DESC_SUBSTR = "MIDI"
+const val MIN_ROUND_TIME = 10L
+const val MIDI_ROUND_TIME = 10L
+const val MIDI_MIN_STEP = .05f
+const val MIDI_STEP_DIVISOR = 30.0f
+const val BUFFER_SIZE = 1500 / MIN_ROUND_TIME.toInt()
+const val DELTA_BUFFER_SIZE = 2000 / MIN_ROUND_TIME.toInt()
+const val STEPS_X = 32
+const val STEPS_Y = 18
+const val STEPS_TOTAL = STEPS_X * STEPS_Y
+const val TARGET_SCREEN = 1
+const val MIDI_DEV_NAME = "Komplete Audio 6"
 const val N_COLORS = 2
 const val MAX_RANDOM_LOOKUPS = 10000
 const val MIN_WEIGHT = .1
+const val SHOW_DEBUG_FRAME = false
+val frameLock = Object()
 val logger = LoggerFactory.getLogger("de.milux.ppcolor.MainKt")!!
 
 fun main(args : Array<String>) {
-    // https://get.videolan.org/vlc/2.2.5.1/win64/vlc-2.2.5.1-win64.7z
-    System.setProperty("jna.library.path", "vlc")
+    System.setProperty("jna.library.path", "/Applications/VLC.app/Contents/MacOS/lib")
 
     val lockFile = RandomAccessFile("ppcolor.lock", "rw")
     val lock = lockFile.channel.tryLock()
@@ -49,18 +53,29 @@ fun main(args : Array<String>) {
     val screenDevice = screenDevices[TARGET_SCREEN - 1]
     val screenBounds = screenDevice.defaultConfiguration.bounds
     val screenTransform = screenDevice.defaultConfiguration.defaultTransform
-    val screenWidth = round(screenBounds.width * screenTransform.scaleX).toInt()
-    val screenHeight = round(screenBounds.height * screenTransform.scaleY).toInt()
+    val screenWidth = (screenBounds.width * screenTransform.scaleX).roundToInt()
+    val screenHeight = (screenBounds.height * screenTransform.scaleY).roundToInt()
 
     val captureThread = VLCCapture(screenDevice)
-    val calcThread = MidiThread()
+    val midiThread = MidiThread()
 
-    val huePoints = ArrayList<HuePoint>((STEPS_X + 1) * (STEPS_Y + 1))
+    val huePoints = ArrayList<HuePoint>(STEPS_TOTAL)
     val stepX = (screenWidth - 1) / (STEPS_X - 1)
     val stepY = (screenHeight - 1) / (STEPS_Y - 1)
 
     var run = 0L
     val executor = Executors.newFixedThreadPool(1)
+
+    val gridRgb = ArrayList<RGB>(STEPS_TOTAL)
+    val lastGridRgb = ArrayList<RGB>(STEPS_TOTAL)
+    val deltaBuffer = LinkedList<Int>()
+    var deltaSum = 0
+    // Prewarm delta information
+    deltaBuffer += 1e6.toInt()
+    deltaSum += 1e6.toInt()
+
+    // This is not a mistake! We actually want the same pseudo-random sequence for each execution!
+    val rand = Random(42)
 
     while(true) {
         val time = System.currentTimeMillis()
@@ -73,27 +88,47 @@ fun main(args : Array<String>) {
         }
 
         huePoints.clear()
+        gridRgb.clear()
         // First use a fixed grid to extract pixels
         val usedCoordinates = HashSet<Pair<Int, Int>>()
-        var nRandomLookups = 0
         for (sx in 0 until STEPS_X) {
             for (sy in 0 until STEPS_Y) {
                 val x = sx * stepX
                 val y = sy * stepY
                 usedCoordinates += Pair(x, y)
-                val hp = getHuePoint(image, x, y)
-                if (hp != null) {
-                    huePoints += hp
-                }
+                val rgb = getRGBPoint(image, x, y)
+                gridRgb += rgb
+                huePoints += rgb.toHuePoint()
             }
         }
 
-        // This is not a mistake! We want the same "random" sequence for each execution!
-        val rand = Random(42)
+        var frameDelta = 0
+        if (lastGridRgb.isNotEmpty()) {
+            gridRgb.forEachIndexed { i, color ->
+                frameDelta += color diff lastGridRgb[i]
+            }
+        }
+        if (frameDelta != 0) {
+            deltaBuffer += frameDelta
+            deltaSum += frameDelta
+            if (deltaBuffer.size > DELTA_BUFFER_SIZE) {
+                deltaSum -= deltaBuffer.removeFirst()
+            }
+        }
+        midiThread.midiStep = deltaSum.toFloat() / DELTA_BUFFER_SIZE / STEPS_TOTAL / MIDI_STEP_DIVISOR
+        if (logger.isTraceEnabled) {
+            logger.trace("Frame delta: $frameDelta; Adaptation pace ${midiThread.midiStep}")
+        }
+        if (frameDelta != 0 || lastGridRgb.isEmpty()) {
+            lastGridRgb.clear()
+            lastGridRgb.addAll(gridRgb)
+        }
+
         // If any valid pixels have been found
-        if (huePoints.isNotEmpty()) {
+        if ((huePoints.maxBy { it.weight } ?: HuePoint(.0f, .0)).weight >= MIN_WEIGHT) {
             // Use random, unvisited coordinates to get additional pixels
-            val expectedPoints = STEPS_X * STEPS_Y
+            val expectedPoints = STEPS_TOTAL
+            var nRandomLookups = 0
             while (huePoints.size < expectedPoints && nRandomLookups < MAX_RANDOM_LOOKUPS) {
                 nRandomLookups++
                 val x = rand.nextInt(screenWidth)
@@ -105,29 +140,51 @@ fun main(args : Array<String>) {
                     huePoints += hp ?: continue
                 }
             }
-            // Use clustering algorithm to find clusters
-//            val startKMeans = System.currentTimeMillis()
-//            val hueMeans = HueKMeans().getKMeans(huePoints)
-//            logger.info("HueKMeans results: ${hueMeans?.joinToString()}, " +
-//                    "time: ${System.currentTimeMillis() - startKMeans}")
-//            if (hueMeans != null) {
-//                calcThread.submitHueValues(hueMeans.toList())
-//            }
-            val startDBSCAN = System.currentTimeMillis()
-            val hueClusters = DBSCANExecutor(huePoints).findCenters()
-            logger.info("DBSCANExecutor results: ${hueClusters?.joinToString()}, " +
-                    "time: ${System.currentTimeMillis() - startDBSCAN}")
-            if (hueClusters != null) {
-                calcThread.submitHueValues(hueClusters.toList())
+
+            if (frameDelta != 0) {
+                val findingList = ArrayList<List<Float>>()
+
+                // Use k-means clustering algorithm to find clusters
+                val startKMeans = System.currentTimeMillis()
+                val hueMeans = HueKMeans().getKMeans(huePoints)
+                logger.info("HueKMeans results: ${hueMeans?.joinToString()}, " +
+                        "time: ${System.currentTimeMillis() - startKMeans}")
+                if (hueMeans != null) {
+                    findingList += hueMeans.toList()
+//                    midiThread.submitHueValues(listOf(hueMeans.toList()))
+                }
+
+                // Use DBSCAN clustering algorithm to find clusters
+                val startDBSCAN = System.currentTimeMillis()
+                val hueClusters = DBSCANExecutor(huePoints).findCenters()
+                logger.info("DBSCANExecutor results: ${hueClusters?.joinToString()}, " +
+                        "time: ${System.currentTimeMillis() - startDBSCAN}")
+                if (hueClusters != null) {
+                    findingList += hueClusters
+//                    midiThread.submitHueValues(listOf(hueClusters))
+                }
+
+                midiThread.submitHueValues(findingList)
+            } else {
+                midiThread.replayHueValues()
+            }
+
+            if (SHOW_DEBUG_FRAME) {
+                DebugFrame.image = captureThread.image
+                DebugFrame.huePoints = ArrayList(huePoints)
+                DebugFrame.repaint()
             }
         }
 
         // Sleep after each cycle until MIN_ROUND_TIME ms are over
-        val sleepTime = MIN_ROUND_TIME - (System.currentTimeMillis() - time)
+        val sleepTime = (System.currentTimeMillis() - time) - MIN_ROUND_TIME
         if (sleepTime > 0) {
-            sleep(sleepTime)
-        } else {
-            logger.debug("Round time has been exceeded: $sleepTime")
+            logger.warn("Round time has been exceeded by $sleepTime ms")
+        }
+
+        // Wait up to two "normal cycles"
+        synchronized(frameLock) {
+            frameLock.wait(MIN_ROUND_TIME * 2)
         }
     }
 }
@@ -135,7 +192,20 @@ fun main(args : Array<String>) {
 fun getHuePoint(image: BufferedImage, x: Int, y: Int): HuePoint? {
     val rgb = image.getRGB(x, y)
     val colorModel = image.colorModel
-    val hsb = Color.RGBtoHSB(colorModel.getRed(rgb), colorModel.getGreen(rgb), colorModel.getBlue(rgb), null)
-    val hp = HuePoint(hsb[0], hsb[1].toDouble() * hsb[2])
+    val hp = RGB(colorModel.getRed(rgb), colorModel.getGreen(rgb), colorModel.getBlue(rgb)).toHuePoint()
     return if (hp.weight >= MIN_WEIGHT) hp else null
+}
+
+fun getRGBPoint(image: BufferedImage, x: Int, y: Int): RGB {
+    val rgb = image.getRGB(x, y)
+    val colorModel = image.colorModel
+    return RGB(colorModel.getRed(rgb), colorModel.getGreen(rgb), colorModel.getBlue(rgb))
+}
+
+fun normHue(hue: Float): Float {
+    return when {
+        hue >= 1f -> hue - 1f
+        hue < 0f -> hue + 1f
+        else -> hue
+    }
 }

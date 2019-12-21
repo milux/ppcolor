@@ -1,6 +1,9 @@
 package de.milux.ppcolor.ml
 
 import de.milux.ppcolor.N_COLORS
+import de.milux.ppcolor.SHOW_DEBUG_FRAME
+import de.milux.ppcolor.debug.DebugFrame
+import de.milux.ppcolor.normHue
 import kotlin.math.abs
 import kotlin.math.min
 import kotlin.random.Random
@@ -35,6 +38,10 @@ class HueKMeans {
             }
         }
 
+        if (SHOW_DEBUG_FRAME) {
+            DebugFrame.kMeansResults = centers.filterIndexed { i, _ -> adjustmentWeightSums[i] > 0f }
+        }
+
         // Replace empty cluster(s) with hue of strongest cluster
         adjustmentWeightSums.forEachIndexed { i, w ->
             if (w == 0f) {
@@ -53,12 +60,8 @@ class HueKMeans {
             val adjustmentVector = adjustmentSums[i] / adjustmentWeightSums[i]
             if (!adjustmentVector.isNaN()) {
                 newCenters[i] += adjustmentVector
-                // Norm center to range [0;1)
-                if (newCenters[i] < 0f) {
-                    newCenters[i] += 1.0f
-                } else if (newCenters[i] >= 1.0f) {
-                    newCenters[i] -= 1.0f
-                }
+                // Norm center to hue range [0;1)
+                newCenters[i] = normHue(newCenters[i])
             }
         }
         return newCenters

@@ -1,6 +1,9 @@
 package de.milux.ppcolor.ml
 
 import de.milux.ppcolor.N_COLORS
+import de.milux.ppcolor.SHOW_DEBUG_FRAME
+import de.milux.ppcolor.debug.DBSCANResult
+import de.milux.ppcolor.debug.DebugFrame
 import org.apache.commons.math3.ml.clustering.Cluster
 import org.slf4j.LoggerFactory
 import kotlin.math.min
@@ -39,6 +42,9 @@ class DBSCANExecutor(hueList: List<HuePoint>) {
             if (clusters.size >= N_COLORS) {
                 optimisticEps = min(eps * OPTIMISTIC_EPS_FACTOR, MAX_EPS)
                 logger.trace("Found ${clusters.size} clusters after $runs iterations with eps = $eps")
+                if (SHOW_DEBUG_FRAME) {
+                    DebugFrame.dbscanResults = clusters.map { DBSCANResult(it.points) }
+                }
                 return clusters
             }
             eps *= EPS_ANNEALING
@@ -65,7 +71,7 @@ class DBSCANExecutor(hueList: List<HuePoint>) {
     companion object {
         const val EPS_ANNEALING = .8
         const val MAX_EPS = .1
-        const val MIN_PTS_FACTOR = .1
+        const val MIN_PTS_FACTOR = .05
         const val OPTIMISTIC_EPS_FACTOR = 2.5
 
         private var optimisticEps = MAX_EPS

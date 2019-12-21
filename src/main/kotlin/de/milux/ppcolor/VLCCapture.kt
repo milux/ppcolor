@@ -55,8 +55,11 @@ class VLCCapture(screenDevice: GraphicsDevice) : Thread() {
     private inner class RenderCallback internal constructor() :
             RenderCallbackAdapter((image.raster.dataBuffer as DataBufferInt).data) {
 
-        public override fun onDisplay(mediaPlayer: DirectMediaPlayer, data: IntArray) {
-            // not required, data is copied from image directly
+        public override fun onDisplay(mediaPlayer: MediaPlayer, data: IntArray) {
+            // Wake up the screen processing loop
+            synchronized(frameLock) {
+                frameLock.notifyAll()
+            }
         }
     }
 
