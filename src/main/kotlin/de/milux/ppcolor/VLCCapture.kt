@@ -1,19 +1,20 @@
 package de.milux.ppcolor
 
-import uk.co.caprica.vlcj.player.MediaPlayerFactory
-import uk.co.caprica.vlcj.player.direct.BufferFormatCallback
-import uk.co.caprica.vlcj.player.direct.DirectMediaPlayer
-import uk.co.caprica.vlcj.player.direct.RenderCallbackAdapter
-import uk.co.caprica.vlcj.player.direct.format.RV32BufferFormat
+import uk.co.caprica.vlcj.player.base.MediaPlayer
+import uk.co.caprica.vlcj.player.component.CallbackMediaPlayerComponent
+import uk.co.caprica.vlcj.player.embedded.videosurface.callback.BufferFormat
+import uk.co.caprica.vlcj.player.embedded.videosurface.callback.BufferFormatCallbackAdapter
+import uk.co.caprica.vlcj.player.embedded.videosurface.callback.RenderCallbackAdapter
+import uk.co.caprica.vlcj.player.embedded.videosurface.callback.format.RV32BufferFormat
 import java.awt.GraphicsDevice
 import java.awt.image.BufferedImage
 import java.awt.image.DataBufferInt
+import kotlin.math.roundToInt
 
 
 class VLCCapture(screenDevice: GraphicsDevice) : Thread() {
     val image: BufferedImage
-    private val factory: MediaPlayerFactory
-    private val mediaPlayer: DirectMediaPlayer
+    private val mediaPlayerComponent: CallbackMediaPlayerComponent
     private val options: Array<String>
 
     init {
@@ -22,27 +23,33 @@ class VLCCapture(screenDevice: GraphicsDevice) : Thread() {
 
         val screenBounds = screenDevice.defaultConfiguration.bounds
         val screenTransform = screenDevice.defaultConfiguration.defaultTransform
-        val width = Math.round(screenBounds.width * screenTransform.scaleX).toInt()
-        val height = Math.round(screenBounds.height * screenTransform.scaleY).toInt()
+        val width = (screenBounds.width * screenTransform.scaleX).roundToInt()
+        val height = (screenBounds.height * screenTransform.scaleY).roundToInt()
 
         image = screenDevice.defaultConfiguration.createCompatibleImage(width, height)
         image.accelerationPriority = 1.0f
 
-        options = arrayOf(":screen-fps=${1000L / MIN_ROUND_TIME}", ":live-caching=0",
-                ":screen-width=$width", ":screen-height=$height",
-                ":screen-left=${screenBounds.x}", ":screen-top=${screenBounds.y}")
+        options = if (System.getProperty("os.name").contains("Windows")) {
+            arrayOf(":screen-fps=${1000L / MIN_ROUND_TIME}", ":live-caching=0",
+                    ":screen-width=$width", ":screen-height=$height",
+                    ":screen-left=0", ":screen-top=${screenBounds.y}")
+        } else {
+            val screenId = screenDevice.iDstring.split(" ")[1].toLong()
+            arrayOf(":screen-fps=${1000L / MIN_ROUND_TIME}", ":live-caching=0",
+                    ":screen-display-id=$screenId")
+        }
         logger.info("Player options: ${options.joinToString()}")
-        factory = MediaPlayerFactory()
-        mediaPlayer = factory.newDirectMediaPlayer(
-                BufferFormatCallback { w, h -> RV32BufferFormat(w, h) },
-                RenderCallback())
+        mediaPlayerComponent = CallbackMediaPlayerComponent(null,
+                null, null, true, null,
+                RenderCallback(), BufferFormatCallback(), null)
 
         // Automatic start
         start()
     }
 
     override fun run() {
-        mediaPlayer.playMedia("screen://", *options)
+        val player = mediaPlayerComponent.mediaPlayer()
+        player.media().play("screen://", *options)
     }
 
     private inner class RenderCallback internal constructor() :
@@ -51,5 +58,10 @@ class VLCCapture(screenDevice: GraphicsDevice) : Thread() {
         public override fun onDisplay(mediaPlayer: DirectMediaPlayer, data: IntArray) {
             // not required, data is copied from image directly
         }
+    }
+
+    private inner class BufferFormatCallback : BufferFormatCallbackAdapter() {
+        override fun getBufferFormat(sourceWidth: Int, sourceHeight: Int): BufferFormat =
+                RV32BufferFormat(sourceWidth, sourceHeight)
     }
 }
