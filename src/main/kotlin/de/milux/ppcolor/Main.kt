@@ -3,28 +3,24 @@ package de.milux.ppcolor
 import de.milux.ppcolor.debug.DebugFrame
 import de.milux.ppcolor.midi.MidiThread
 import de.milux.ppcolor.ml.buckets.HueBucketAlgorithm
+import de.milux.ppcolor.ml.buckets.HueBucketAlgorithm.N_BUCKETS
 import org.slf4j.LoggerFactory
 import java.awt.GraphicsEnvironment
 import java.awt.image.BufferedImage
 import java.io.File
 import java.io.RandomAccessFile
 import java.util.*
-import java.util.concurrent.Callable
 import java.util.concurrent.Executors
-import java.util.concurrent.Future
 import javax.imageio.ImageIO
-import kotlin.math.abs
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.roundToInt
+import kotlin.math.*
 import kotlin.system.exitProcess
 
 const val MIN_ROUND_TIME = 10L
 const val MIDI_ROUND_TIME = 10L
-const val MIDI_MIN_STEP = .05f
-const val MIDI_STEP_DIVISOR = 30.0f
+const val MIDI_MIN_STEP = .05
+const val MIDI_STEP_MULTIPLIER = 1500.0
 const val BUFFER_SIZE = 500 / MIN_ROUND_TIME.toInt()
-const val DELTA_BUFFER_SIZE = 1500 / MIN_ROUND_TIME.toInt()
+const val DELTA_BUFFER_SIZE = 3000 / MIN_ROUND_TIME.toInt()
 const val STEPS_X = 64
 const val STEPS_Y = 32
 const val STEPS_TOTAL = STEPS_X * STEPS_Y
@@ -69,15 +65,10 @@ fun main() {
     var run = 0L
     val executor = Executors.newFixedThreadPool(max(Runtime.getRuntime().availableProcessors() - 2, 1))
 
-    val gridRgb = ArrayList<RGB>(STEPS_TOTAL)
-    val lastGridRgb = ArrayList<RGB>(STEPS_TOTAL)
-    val deltaBuffer = LinkedList<Int>()
-    var deltaSum = 0
+    var lastBucketWeights = DoubleArray(0)
     // Prewarm delta information
-    deltaBuffer += 1e6.toInt()
-    deltaSum += 1e6.toInt()
-
-    val taskList = LinkedList<Future<FloatArray>>()
+    val deltaBuffer = LinkedList<Double>().also { it += 1e6 }
+    var deltaSum = 1e6
 
     while(true) {
         val time = System.currentTimeMillis()
@@ -90,7 +81,6 @@ fun main() {
         }
 
         val huePoints = ArrayList<HuePoint>(STEPS_TOTAL)
-        gridRgb.clear()
 
         // First use a fixed grid to extract pixels
         for (sx in 0 until STEPS_X) {
@@ -98,47 +88,40 @@ fun main() {
                 val x = sx * stepX
                 val y = sy * stepY
                 val rgb = getRGBPoint(image, x, y)
-                gridRgb += rgb
                 huePoints += rgb.toHuePoint()
             }
         }
 
-        var frameDelta = 0
-        if (lastGridRgb.isNotEmpty()) {
-            gridRgb.forEachIndexed { i, color ->
-                frameDelta += color diff lastGridRgb[i]
+        // If any valid pixels have been found
+        if ((huePoints.maxBy { it.weight } ?: HuePoint(.0f, .0)).weight >= MIN_WEIGHT) {
+            val extBucketWeights = HueBucketAlgorithm.getExtendedBucketWeights(huePoints)
+
+            var frameDelta = 0.0
+            if (lastBucketWeights.isNotEmpty()) {
+                extBucketWeights.forEachIndexed { i, ebw ->
+                    frameDelta += abs(ebw - lastBucketWeights[i])
+                }
             }
-        }
-        if (frameDelta != 0) {
             deltaBuffer += frameDelta
             deltaSum += frameDelta
             if (deltaBuffer.size > DELTA_BUFFER_SIZE) {
                 deltaSum -= deltaBuffer.removeFirst()
             }
-        }
-        midiThread.midiStep = deltaSum.toFloat() / DELTA_BUFFER_SIZE / STEPS_TOTAL / MIDI_STEP_DIVISOR
-        if (logger.isTraceEnabled) {
-            logger.trace("Frame delta: $frameDelta; Adaptation pace ${midiThread.midiStep}")
-        }
-        if (frameDelta != 0 || lastGridRgb.isEmpty()) {
-            lastGridRgb.clear()
-            lastGridRgb.addAll(gridRgb)
-        }
 
-        // If any valid pixels have been found
-        if ((huePoints.maxBy { it.weight } ?: HuePoint(.0f, .0)).weight >= MIN_WEIGHT) {
-            taskList += if (frameDelta != 0) {
-                executor.submit(Callable { HueBucketAlgorithm.getDominantHueList(huePoints) })
-            } else {
-                executor.submit(Callable { FloatArray(0) })
+            val adaptationFactor = deltaSum / DELTA_BUFFER_SIZE / N_BUCKETS * MIDI_STEP_MULTIPLIER
+            midiThread.midiStep = adaptationFactor * sqrt(adaptationFactor)
+            if (logger.isTraceEnabled) {
+                logger.trace("Frame delta: $frameDelta; Adaptation pace ${midiThread.midiStep}")
             }
-            while (taskList.isNotEmpty() && taskList.first.isDone) {
-                val bucketHues = taskList.removeFirst().get()
-                if (bucketHues.isNotEmpty()) {
-                    logger.info("Bucket algorithm results: ${bucketHues.joinToString()}")
-                }
-                midiThread.submitHueValues(bucketHues)
+            if (frameDelta != 0.0 || lastBucketWeights.isEmpty()) {
+                lastBucketWeights = extBucketWeights
             }
+
+            val bucketHues = HueBucketAlgorithm.getDominantHueList(extBucketWeights)
+            if (bucketHues.isNotEmpty()) {
+                logger.info("Bucket algorithm results: ${bucketHues.joinToString()}")
+            }
+            midiThread.submitHueValues(bucketHues)
 
             if (DebugFrame.logger.isDebugEnabled) {
                 DebugFrame.image = captureThread.image

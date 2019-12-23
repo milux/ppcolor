@@ -43,18 +43,16 @@ object HueBucketAlgorithm {
     }
 
 
-    fun getDominantHueList(hpList: List<HuePoint>): FloatArray {
-        // Calculate the total bucket weights and pass them to the debug visualization
-        val bucketWeights = getBucketWeights(hpList)
-        val totalBucketWeights = getTotalBucketWeights(bucketWeights)
-        DebugFrame.bucketWeights = totalBucketWeights
+    fun getDominantHueList(extBucketWeights: DoubleArray): FloatArray {
+        // Calculate the extended bucket weights and pass them to the debug visualization
+        DebugFrame.bucketWeights = extBucketWeights
         // Find clusters
-        val targetWeight = totalBucketWeights.sum() * TARGET_WEIGHT_THRESHOLD
+        val targetWeight = extBucketWeights.sum() * TARGET_WEIGHT_THRESHOLD
         var collectedWeight = .0
         val blockedBuckets = BooleanArray(N_BUCKETS) { false }
         val clusters = LinkedList<BucketCluster>()
         while (collectedWeight < targetWeight && clusters.size < N_COLORS) {
-            val bucketCluster = getCluster(totalBucketWeights, blockedBuckets)
+            val bucketCluster = getCluster(extBucketWeights, blockedBuckets)
             if (bucketCluster == null) {
                 break
             } else {
@@ -128,17 +126,21 @@ object HueBucketAlgorithm {
         return weights.map { max(.0, log2(it * 50)) }.toDoubleArray()
     }
 
-    private fun getTotalBucketWeights(bucketWeights: DoubleArray): DoubleArray {
-        val totalWeights = DoubleArray(N_BUCKETS)
-        for (i in totalWeights.indices) {
-            totalWeights[i] = bucketWeights[i]
+    fun getExtendedBucketWeights(hpList: List<HuePoint>): DoubleArray {
+        val bucketWeights = getBucketWeights(hpList)
+        val extWeights = DoubleArray(N_BUCKETS)
+        for (i in extWeights.indices) {
+            extWeights[i] = bucketWeights[i]
             for (bd in 1 until multiplyLookup.size) {
                 val leftNeighbor = leftIndex(i - bd)
                 val rightNeighbor = rightIndex(i + bd)
-                totalWeights[i] += (bucketWeights[leftNeighbor] + bucketWeights[rightNeighbor]) * multiplyLookup[bd]
+                extWeights[i] += (bucketWeights[leftNeighbor] + bucketWeights[rightNeighbor]) * multiplyLookup[bd]
             }
         }
-        return totalWeights.map { sqrt(it) }.toDoubleArray()
+        val smoothedWeights = extWeights.map { sqrt(it) }
+        val maxWeight = extWeights.max()!!
+        // Normalize weights before output
+        return smoothedWeights.map { it / maxWeight }.toDoubleArray()
     }
 
     private fun leftIndex(i: Int): Int = (i + N_BUCKETS) % N_BUCKETS

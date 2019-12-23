@@ -23,7 +23,7 @@ class DebugFrame : JPanel() {
         this.background = Color.BLACK
         val frame = JFrame("Output nColors")
         frame.defaultCloseOperation = JFrame.EXIT_ON_CLOSE
-        frame.setSize(1445, 1060)
+        frame.setSize(1445, 950)
         frame.contentPane = this
         frame.isVisible = true
     }

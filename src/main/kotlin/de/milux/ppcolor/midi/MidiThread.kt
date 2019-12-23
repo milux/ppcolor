@@ -8,13 +8,12 @@ import javax.sound.midi.MidiSystem
 import javax.sound.midi.ShortMessage
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.roundToInt
 
 class MidiThread : Thread() {
     private val buffer = ColorBuffer(N_COLORS, BUFFER_SIZE)
     private val outputColors = Array(N_COLORS) { FloatRGB(0f, 0f, 0f) }
     private var lastTargetColors: List<RGB> = emptyList()
-    var midiStep = 0f
+    var midiStep = .0
 
     init {
         this.isDaemon = true
@@ -47,7 +46,7 @@ class MidiThread : Thread() {
         // Create hue List with ideal order (minimum difference between median and target hue over all indices)
         val hunResult = HungarianAlgorithm(costMatrix).execute()
         val orderedTargetHues = hunResult.map { hueValues[it] }
-        logger.info("Learned hue centers: ${orderedTargetHues.joinToString { (it * 360).roundToInt().toString() }}")
+        logger.info("Learned hue centers: ${orderedTargetHues.joinToString { it.toString() }}")
         // Push new target colors to buffer
         lastTargetColors = orderedTargetHues.map { RGB.fromHSB(it) }
         buffer += lastTargetColors
@@ -76,7 +75,7 @@ class MidiThread : Thread() {
     override fun run() {
         val notes = Array(N_COLORS * 3) { MidiNote(0, 0) }
         while (true) {
-            val midiMaxStep = max(midiStep, MIDI_MIN_STEP)
+            val midiMaxStep = max(midiStep, MIDI_MIN_STEP).toFloat()
             val time = System.currentTimeMillis()
             outputColors.forEachIndexed { i, outputColor ->
                 val average = buffer.getAveraged(i)
