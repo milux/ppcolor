@@ -1,7 +1,7 @@
-package de.milux.ppcolor.ml
+package de.milux.ppcolor.ml.dbscan
 
+import de.milux.ppcolor.HuePoint
 import de.milux.ppcolor.MIN_CLUSTER_WEIGHT
-import de.milux.ppcolor.debug.DBSCANResult
 import de.milux.ppcolor.debug.DebugFrame
 import org.apache.commons.math3.ml.clustering.Cluster
 import org.slf4j.LoggerFactory

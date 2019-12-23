@@ -1,9 +1,9 @@
 package de.milux.ppcolor.ml.buckets
 
+import de.milux.ppcolor.HuePoint
 import de.milux.ppcolor.N_COLORS
 import de.milux.ppcolor.TARGET_WEIGHT_THRESHOLD
 import de.milux.ppcolor.debug.DebugFrame
-import de.milux.ppcolor.ml.HuePoint
 import de.milux.ppcolor.normHue
 import java.util.*
 import kotlin.math.log2

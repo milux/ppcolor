@@ -1,6 +1,5 @@
 package de.milux.ppcolor
 
-import de.milux.ppcolor.ml.HuePoint
 import java.awt.Color
 import kotlin.math.abs
 
@@ -20,9 +19,6 @@ data class RGB(val red: Int, val green: Int, val blue: Int) {
 
     fun toHuePoint(): HuePoint {
         val hsb = Color.RGBtoHSB(red, green, blue, null)
-        if (hsb[2] < 0) {
-            return HuePoint(.0f, .0)
-        }
         return HuePoint(hsb[0], hsb[1].toDouble() * hsb[2] * hsb[2])
     }
 

@@ -1,6 +1,7 @@
-package de.milux.ppcolor
+package de.milux.ppcolor.midi
 
 import blogspot.software_and_algorithms.stern_library.optimization.HungarianAlgorithm
+import de.milux.ppcolor.*
 import de.milux.ppcolor.debug.DebugFrame
 import org.slf4j.LoggerFactory
 import javax.sound.midi.MidiSystem
@@ -23,43 +24,32 @@ class MidiThread : Thread() {
         start()
     }
 
-    fun submitHueValues(hueLists: List<List<Float>>) {
-        if (hueLists.isEmpty()) {
+    fun submitHueValues(hueValues: FloatArray) {
+        if (hueValues.isEmpty()) {
+            // Empty array signals unchanged inputs, replay the last target colors and return
+            buffer += lastTargetColors
             return
         }
-        var lowestCosts = Double.MAX_VALUE
-        var orderedTargetHues: List<Float> = emptyList()
-        for (hueValues in hueLists) {
-            val targetHues = hueValues.toFloatArray()
-            val medianHues: FloatArray
-            // Synchronized fetch of current average nColors
-            synchronized(this) {
-                medianHues = FloatArray(N_COLORS) {
-                    outputColors[it].hue
-                }
-            }
-            // Create cost matrix with medians as workers and target values as jobs
-            val costMatrix = Array(N_COLORS) { DoubleArray(targetHues.size) }
-            for (m in 0 until N_COLORS) {
-                for (t in targetHues.indices) {
-                    costMatrix[m][t] = hueDistance(medianHues[m], targetHues[t]).toDouble()
-                }
-            }
-            // Create hue List with ideal order (minimum difference between median and target hue over all indices)
-            val hunResult = HungarianAlgorithm(costMatrix).execute()
-            val costSum = hunResult.mapIndexed { m, t -> costMatrix[m][t] }.sum()
-            if (costSum < lowestCosts) {
-                lowestCosts = costSum
-                orderedTargetHues = hunResult.map { targetHues[it] }
+        val medianHues: FloatArray
+        // Synchronized fetch of current average nColors
+        synchronized(this) {
+            medianHues = FloatArray(N_COLORS) {
+                outputColors[it].hue
             }
         }
+        // Create cost matrix with medians as workers and target values as jobs
+        val costMatrix = Array(N_COLORS) { DoubleArray(hueValues.size) }
+        for (m in 0 until N_COLORS) {
+            for (t in hueValues.indices) {
+                costMatrix[m][t] = hueDistance(medianHues[m], hueValues[t]).toDouble()
+            }
+        }
+        // Create hue List with ideal order (minimum difference between median and target hue over all indices)
+        val hunResult = HungarianAlgorithm(costMatrix).execute()
+        val orderedTargetHues = hunResult.map { hueValues[it] }
         logger.info("Learned hue centers: ${orderedTargetHues.joinToString { (it * 360).roundToInt().toString() }}")
         // Push new target colors to buffer
         lastTargetColors = orderedTargetHues.map { RGB.fromHSB(it) }
-        buffer += lastTargetColors
-    }
-
-    fun replayHueValues() {
         buffer += lastTargetColors
     }
 

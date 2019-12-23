@@ -1,4 +1,4 @@
-package de.milux.ppcolor
+package de.milux.ppcolor.midi
 
 import java.awt.Color
 

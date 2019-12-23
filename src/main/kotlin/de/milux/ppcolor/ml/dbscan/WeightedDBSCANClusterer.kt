@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package de.milux.ppcolor.ml
+package de.milux.ppcolor.ml.dbscan
 
 import org.apache.commons.math3.exception.NotPositiveException
 import org.apache.commons.math3.exception.NullArgumentException

@@ -1,5 +1,6 @@
-package de.milux.ppcolor
+package de.milux.ppcolor.midi
 
+import de.milux.ppcolor.RGB
 import kotlin.math.max
 
 class ColorBuffer(private val nColors: Int, private val bufferSize: Int) {
@@ -28,7 +29,7 @@ class ColorBuffer(private val nColors: Int, private val bufferSize: Int) {
         }
 
         // Update bufferIndex
-        bufferIndex = (bufferIndex + 1) % BUFFER_SIZE
+        bufferIndex = (bufferIndex + 1) % de.milux.ppcolor.BUFFER_SIZE
         // Adjusts bufferFill until it reaches BUFFER_SIZE - 1
         bufferFill = max(bufferFill, bufferIndex + 1)
     }

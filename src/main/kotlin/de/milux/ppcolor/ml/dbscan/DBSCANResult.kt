@@ -1,6 +1,6 @@
-package de.milux.ppcolor.debug
+package de.milux.ppcolor.ml.dbscan
 
-import de.milux.ppcolor.ml.HuePoint
+import de.milux.ppcolor.HuePoint
 
 data class DBSCANResult(val huePoints: List<HuePoint>) {
     val min: Float

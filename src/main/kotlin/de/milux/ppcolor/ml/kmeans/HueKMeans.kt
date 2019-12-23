@@ -1,5 +1,6 @@
-package de.milux.ppcolor.ml
+package de.milux.ppcolor.ml.kmeans
 
+import de.milux.ppcolor.HuePoint
 import de.milux.ppcolor.MIN_CLUSTER_WEIGHT
 import de.milux.ppcolor.debug.DebugFrame
 import de.milux.ppcolor.hueDistance

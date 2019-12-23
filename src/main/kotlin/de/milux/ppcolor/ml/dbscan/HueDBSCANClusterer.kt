@@ -1,5 +1,6 @@
-package de.milux.ppcolor.ml
+package de.milux.ppcolor.ml.dbscan
 
+import de.milux.ppcolor.HuePoint
 import de.milux.ppcolor.hueDistance
 import org.apache.commons.math3.exception.NotPositiveException
 import org.apache.commons.math3.exception.NullArgumentException
@@ -94,10 +95,10 @@ constructor(
      * @return the expanded cluster
      */
     override fun expandCluster(cluster: Cluster<HuePoint>,
-                                     point: HuePoint,
-                                     neighbors: List<HuePoint>,
-                                     points: Collection<HuePoint>,
-                                     visited: MutableMap<Clusterable, PointStatus>): Cluster<HuePoint> {
+                               point: HuePoint,
+                               neighbors: List<HuePoint>,
+                               points: Collection<HuePoint>,
+                               visited: MutableMap<Clusterable, PointStatus>): Cluster<HuePoint> {
         cluster.addPoint(point)
         visited[point] = PointStatus.PART_OF_CLUSTER
 

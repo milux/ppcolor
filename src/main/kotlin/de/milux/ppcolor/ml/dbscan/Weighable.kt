@@ -1,4 +1,4 @@
-package de.milux.ppcolor.ml
+package de.milux.ppcolor.ml.dbscan
 
 interface Weighable {
     val weight: Double
