@@ -23,7 +23,7 @@ data class RGB(val red: Int, val green: Int, val blue: Int) {
         if (hsb[2] < 0) {
             return HuePoint(.0f, .0)
         }
-        return HuePoint(hsb[0], hsb[1].toDouble() * hsb[2])
+        return HuePoint(hsb[0], hsb[1].toDouble() * hsb[2] * hsb[2])
     }
 
     val color get() = Color(red, green, blue)

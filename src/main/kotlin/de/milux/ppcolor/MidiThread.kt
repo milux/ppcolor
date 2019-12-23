@@ -2,7 +2,7 @@ package de.milux.ppcolor
 
 import blogspot.software_and_algorithms.stern_library.optimization.HungarianAlgorithm
 import de.milux.ppcolor.debug.DebugFrame
-import de.milux.ppcolor.ml.HueKMeans.Companion.cyclicDistance
+import org.slf4j.LoggerFactory
 import javax.sound.midi.MidiSystem
 import javax.sound.midi.ShortMessage
 import kotlin.math.max
@@ -42,7 +42,7 @@ class MidiThread : Thread() {
             val costMatrix = Array(N_COLORS) { DoubleArray(targetHues.size) }
             for (m in 0 until N_COLORS) {
                 for (t in targetHues.indices) {
-                    costMatrix[m][t] = cyclicDistance(medianHues[m], targetHues[t]).toDouble()
+                    costMatrix[m][t] = hueDistance(medianHues[m], targetHues[t]).toDouble()
                 }
             }
             // Create hue List with ideal order (minimum difference between median and target hue over all indices)
@@ -99,7 +99,7 @@ class MidiThread : Thread() {
                         outputColor.blue - (if (bDiff > 0) min(bDiff, midiMaxStep) else max(bDiff, -midiMaxStep))
                 )
                 outputColors[i] = newOutputColor
-                if (SHOW_DEBUG_FRAME) {
+                if (DebugFrame.logger.isDebugEnabled) {
                     DebugFrame.colors[i] = average.color
                     DebugFrame.outColors[i] = newOutputColor.color
                 }
@@ -117,5 +117,9 @@ class MidiThread : Thread() {
                 logger.warn("Round time has been exceeded by ${-sleepTime} ms")
             }
         }
+    }
+
+    companion object {
+        val logger = LoggerFactory.getLogger(MidiThread::class.java)!!
     }
 }

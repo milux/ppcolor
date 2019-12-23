@@ -1,6 +1,6 @@
 package de.milux.ppcolor.ml
 
-import de.milux.ppcolor.ml.HueKMeans.Companion.cyclicDistance
+import de.milux.ppcolor.hueDistance
 import org.apache.commons.math3.exception.NotPositiveException
 import org.apache.commons.math3.exception.NullArgumentException
 import org.apache.commons.math3.ml.clustering.Cluster
@@ -39,7 +39,7 @@ constructor(
         // Seek left
         var leftEndReached = false
         for (i in pointIndex - 1 downTo 0) {
-            val dist = cyclicDistance(point.hue, pList[i].hue)
+            val dist = hueDistance(point.hue, pList[i].hue)
             if (dist <= eps) {
                 neighbors.addFirst(pList[i])
             } else {
@@ -50,7 +50,7 @@ constructor(
         // Continue on other end
         if (!leftEndReached) {
             for (i in pList.size - 1 downTo pointIndex + 1) {
-                val dist = cyclicDistance(point.hue, pList[i].hue)
+                val dist = hueDistance(point.hue, pList[i].hue)
                 if (dist <= eps) {
                     neighbors.addFirst(pList[i])
                 } else {
@@ -61,7 +61,7 @@ constructor(
         // Seek right
         var rightEndReached = false
         for (i in pointIndex + 1 until pList.size) {
-            val dist = cyclicDistance(point.hue, pList[i].hue)
+            val dist = hueDistance(point.hue, pList[i].hue)
             if (dist <= eps) {
                 neighbors.addLast(pList[i])
             } else {
@@ -72,7 +72,7 @@ constructor(
         // Continue on other end
         if (!rightEndReached) {
             for (i in 0 until pointIndex - 1) {
-                val dist = cyclicDistance(point.hue, pList[i].hue)
+                val dist = hueDistance(point.hue, pList[i].hue)
                 if (dist <= eps) {
                     neighbors.addLast(pList[i])
                 } else {

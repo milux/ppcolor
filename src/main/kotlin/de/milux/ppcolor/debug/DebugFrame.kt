@@ -1,8 +1,9 @@
 package de.milux.ppcolor.debug
 
 import de.milux.ppcolor.N_COLORS
-import de.milux.ppcolor.SHOW_DEBUG_FRAME
 import de.milux.ppcolor.ml.HuePoint
+import de.milux.ppcolor.ml.buckets.BucketCluster
+import de.milux.ppcolor.ml.buckets.HueBucketAlgorithm.N_BUCKETS
 import org.slf4j.LoggerFactory
 import java.awt.Color
 import java.awt.Graphics
@@ -12,12 +13,11 @@ import javax.swing.JFrame
 import javax.swing.JPanel
 import javax.swing.SwingUtilities
 import kotlin.math.PI
+import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.sin
 
 class DebugFrame : JPanel() {
-    private val logger = LoggerFactory.getLogger(javaClass)
-
     init {
         this.background = Color.BLACK
         val frame = JFrame("Output nColors")
@@ -52,15 +52,21 @@ class DebugFrame : JPanel() {
             g.fillOval(x, y, pd, pd)
         }
 
-        dbscanResults.forEach {
-            val diff = if (it.max - it.min > 0.5) 1f - (it.max - it.min) else it.max - it.min
-            g.color = Color.getHSBColor(it.median, 1f, 1f)
+        bucketClusters.forEach {
+            val diff = if (it.leftBorder > it.rightBorder) {
+                1 - it.leftBorder + it.rightBorder
+            } else {
+                it.leftBorder - it.rightBorder
+            }
+            val startAngle = if (it.leftBorder < it.rightBorder) it.leftBorder else it.rightBorder
+//            println("left: ${it.leftBorder}, right: ${it.rightBorder}, diff: $diff")
+            g.color = Color.getHSBColor(it.center, 1f, 1f)
             g.fillArc(
                     CIRCLE_CENTER_X - CIRCLE_RADIUS + 25,
                     CIRCLE_CENTER_Y - CIRCLE_RADIUS + 25,
                     CIRCLE_RADIUS * 2 - 50,
                     CIRCLE_RADIUS * 2 - 50,
-                    -(it.max * 360).toInt(),
+                    (-startAngle * 360).toInt(),
                     (diff * 360).toInt())
         }
         g.color = Color.BLACK
@@ -75,12 +81,36 @@ class DebugFrame : JPanel() {
         kMeansResults.forEach {
             g.color = Color.getHSBColor(it, 1f, 1f)
             g.fillArc(
-                    CIRCLE_CENTER_X - CIRCLE_RADIUS + 175,
-                    CIRCLE_CENTER_Y - CIRCLE_RADIUS + 175,
-                    CIRCLE_RADIUS * 2 - 350,
-                    CIRCLE_RADIUS * 2 - 350,
+                    CIRCLE_CENTER_X - CIRCLE_RADIUS + 100,
+                    CIRCLE_CENTER_Y - CIRCLE_RADIUS + 100,
+                    CIRCLE_RADIUS * 2 - 200,
+                    CIRCLE_RADIUS * 2 - 200,
                     -((it + 0.005) * 360).toInt(),
                     3)
+        }
+        g.color = Color.BLACK
+        g.fillArc(
+                CIRCLE_CENTER_X - CIRCLE_RADIUS + 150,
+                CIRCLE_CENTER_Y - CIRCLE_RADIUS + 150,
+                CIRCLE_RADIUS * 2 - 300,
+                CIRCLE_RADIUS * 2 - 300,
+                0,
+                360)
+
+        if (bucketWeights.isNotEmpty()) {
+            val maxW = bucketWeights.max() ?: throw IllegalStateException()
+            bucketWeights.forEachIndexed { i, w ->
+                val hue = i.toFloat() / N_BUCKETS
+                val radius = (225 * w / maxW).toInt()
+                g.color = Color.getHSBColor(hue, 1f, 1f)
+                g.fillArc(
+                        CIRCLE_CENTER_X - radius,
+                        CIRCLE_CENTER_Y - radius,
+                        radius * 2,
+                        radius * 2,
+                        -(hue * 360).toInt(),
+                        ceil(360.toFloat() / N_BUCKETS).toInt())
+            }
         }
 
 //        val imageWidth = 400
@@ -94,16 +124,19 @@ class DebugFrame : JPanel() {
         const val CIRCLE_CENTER_Y = 450
 
         private lateinit var debugFrame: DebugFrame
+        val logger = LoggerFactory.getLogger(DebugFrame::class.java)!!
 
         var colors = Array<Color>(N_COLORS) { Color.BLACK }
         var outColors = Array<Color>(N_COLORS) { Color.BLACK }
         var huePoints = emptyList<HuePoint>()
         var dbscanResults = emptyList<DBSCANResult>()
         var kMeansResults = emptyList<Float>()
+        var bucketWeights = DoubleArray(0)
+        var bucketClusters = emptyList<BucketCluster>()
         var image: Image = BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB)
 
         init {
-            if (SHOW_DEBUG_FRAME) {
+            if (logger.isDebugEnabled) {
                 debugFrame = DebugFrame()
             }
         }

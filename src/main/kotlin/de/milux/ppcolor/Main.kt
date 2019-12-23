@@ -1,17 +1,20 @@
 package de.milux.ppcolor
 
 import de.milux.ppcolor.debug.DebugFrame
-import de.milux.ppcolor.ml.DBSCANExecutor
-import de.milux.ppcolor.ml.HueKMeans
 import de.milux.ppcolor.ml.HuePoint
+import de.milux.ppcolor.ml.buckets.HueBucketAlgorithm
 import org.slf4j.LoggerFactory
 import java.awt.GraphicsEnvironment
 import java.awt.image.BufferedImage
 import java.io.File
 import java.io.RandomAccessFile
 import java.util.*
+import java.util.concurrent.Callable
 import java.util.concurrent.Executors
 import javax.imageio.ImageIO
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.system.exitProcess
 
@@ -19,17 +22,18 @@ const val MIN_ROUND_TIME = 10L
 const val MIDI_ROUND_TIME = 10L
 const val MIDI_MIN_STEP = .05f
 const val MIDI_STEP_DIVISOR = 30.0f
-const val BUFFER_SIZE = 1500 / MIN_ROUND_TIME.toInt()
-const val DELTA_BUFFER_SIZE = 2000 / MIN_ROUND_TIME.toInt()
-const val STEPS_X = 32
-const val STEPS_Y = 18
+const val BUFFER_SIZE = 500 / MIN_ROUND_TIME.toInt()
+const val DELTA_BUFFER_SIZE = 1500 / MIN_ROUND_TIME.toInt()
+const val STEPS_X = 64
+const val STEPS_Y = 32
 const val STEPS_TOTAL = STEPS_X * STEPS_Y
 const val TARGET_SCREEN = 1
 const val MIDI_DEV_NAME = "Komplete Audio 6"
 const val N_COLORS = 2
 const val MAX_RANDOM_LOOKUPS = 10000
-const val MIN_WEIGHT = .1
-const val SHOW_DEBUG_FRAME = false
+const val MIN_WEIGHT = .05
+const val MIN_CLUSTER_WEIGHT = .1
+const val TARGET_WEIGHT_THRESHOLD = .8
 val frameLock = Object()
 val logger = LoggerFactory.getLogger("de.milux.ppcolor.MainKt")!!
 
@@ -64,7 +68,7 @@ fun main(args : Array<String>) {
     val stepY = (screenHeight - 1) / (STEPS_Y - 1)
 
     var run = 0L
-    val executor = Executors.newFixedThreadPool(1)
+    val executor = Executors.newFixedThreadPool(max(Runtime.getRuntime().availableProcessors() - 2, 1))
 
     val gridRgb = ArrayList<RGB>(STEPS_TOTAL)
     val lastGridRgb = ArrayList<RGB>(STEPS_TOTAL)
@@ -74,14 +78,11 @@ fun main(args : Array<String>) {
     deltaBuffer += 1e6.toInt()
     deltaSum += 1e6.toInt()
 
-    // This is not a mistake! We actually want the same pseudo-random sequence for each execution!
-    val rand = Random(42)
-
     while(true) {
         val time = System.currentTimeMillis()
 
         val image = captureThread.image
-        if (logger.isTraceEnabled && ++run % 10L == 0L) {
+        if (DebugFrame.logger.isTraceEnabled && ++run % (1000L / MIN_ROUND_TIME) == 0L) {
             executor.submit {
                 ImageIO.write(image, "jpg", File("ss" + System.currentTimeMillis() + ".jpg"))
             }
@@ -129,6 +130,8 @@ fun main(args : Array<String>) {
             // Use random, unvisited coordinates to get additional pixels
             val expectedPoints = STEPS_TOTAL
             var nRandomLookups = 0
+            // This is not a mistake! We actually want the same pseudo-random sequence for each execution!
+            val rand = Random(42)
             while (huePoints.size < expectedPoints && nRandomLookups < MAX_RANDOM_LOOKUPS) {
                 nRandomLookups++
                 val x = rand.nextInt(screenWidth)
@@ -144,32 +147,38 @@ fun main(args : Array<String>) {
             if (frameDelta != 0) {
                 val findingList = ArrayList<List<Float>>()
 
-                // Use k-means clustering algorithm to find clusters
-                val startKMeans = System.currentTimeMillis()
-                val hueMeans = HueKMeans().getKMeans(huePoints)
-                logger.info("HueKMeans results: ${hueMeans?.joinToString()}, " +
-                        "time: ${System.currentTimeMillis() - startKMeans}")
-                if (hueMeans != null) {
-                    findingList += hueMeans.toList()
-//                    midiThread.submitHueValues(listOf(hueMeans.toList()))
-                }
+//                // Use DBSCAN clustering algorithm to find clusters
+//                val clusterFuture = executor.submit(Callable { DBSCANExecutor(N_COLORS, huePoints).findCenters() })
 
-                // Use DBSCAN clustering algorithm to find clusters
-                val startDBSCAN = System.currentTimeMillis()
-                val hueClusters = DBSCANExecutor(huePoints).findCenters()
-                logger.info("DBSCANExecutor results: ${hueClusters?.joinToString()}, " +
-                        "time: ${System.currentTimeMillis() - startDBSCAN}")
-                if (hueClusters != null) {
-                    findingList += hueClusters
-//                    midiThread.submitHueValues(listOf(hueClusters))
-                }
+//                // Use k-means clustering algorithm to find clusters
+//                val meansFuture = executor.submit(Callable { HueKMeans(N_COLORS).getKMeans(huePoints) })
+
+                val bucketFuture = executor.submit(Callable { HueBucketAlgorithm.getDominantHueList(huePoints) })
+
+//                val hueClusters = clusterFuture.get()
+//                logger.info("DBSCANExecutor results: ${hueClusters?.joinToString()}")
+//                if (hueClusters != null) {
+//                    findingList += hueClusters
+////                    midiThread.submitHueValues(listOf(hueClusters))
+//                }
+
+//                val hueMeans = meansFuture.get()
+//                logger.info("HueKMeans results: ${hueMeans?.joinToString()}")
+//                if (hueMeans != null) {
+//                    findingList += hueMeans.toList()
+////                    midiThread.submitHueValues(listOf(hueMeans.toList()))
+//                }
+
+                val bucketHues = bucketFuture.get()
+                logger.info("HueKMeans results: ${bucketHues.joinToString()}")
+                findingList += bucketHues.toList()
 
                 midiThread.submitHueValues(findingList)
             } else {
                 midiThread.replayHueValues()
             }
 
-            if (SHOW_DEBUG_FRAME) {
+            if (DebugFrame.logger.isDebugEnabled) {
                 DebugFrame.image = captureThread.image
                 DebugFrame.huePoints = ArrayList(huePoints)
                 DebugFrame.repaint()
@@ -208,4 +217,9 @@ fun normHue(hue: Float): Float {
         hue < 0f -> hue + 1f
         else -> hue
     }
+}
+
+fun hueDistance(a: Float, b: Float): Float {
+    val stdDiff = abs(a - b)
+    return min(stdDiff, 1f - stdDiff)
 }
