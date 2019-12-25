@@ -10,7 +10,7 @@ The tool was tested with **ProPresenter** background videos, **Native Instrument
 
 ## Requirements
 - Java 8.0 or higher with `javax.sound.midi` available (default for common JREs)
-- Latest VLC 2.2.x in directory "vlc" in Project root or along with the JAR file
+- Latest VLC 3.x in directory "vlc" in Project root or along with the JAR file
 
 ## Usage
 ### Quick Run

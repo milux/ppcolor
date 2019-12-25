@@ -12,16 +12,6 @@ data class RGB(val red: Int, val green: Int, val blue: Int) {
 
     val hue get() = Color.RGBtoHSB(red, green, blue, null)[0]
 
-    fun toHuePoint(minWeight: Double): HuePoint? {
-        val hp = toHuePoint()
-        return if (hp.weight >= minWeight) hp else null
-    }
-
-    fun toHuePoint(): HuePoint {
-        val hsb = Color.RGBtoHSB(red, green, blue, null)
-        return HuePoint(hsb[0], hsb[1].toDouble() * hsb[2] * hsb[2])
-    }
-
     val color get() = Color(red, green, blue)
 
     companion object {
