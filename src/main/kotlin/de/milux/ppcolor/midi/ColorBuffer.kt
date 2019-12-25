@@ -12,9 +12,9 @@ class ColorBuffer(private val nColors: Int, private val bufferSize: Int) {
 
     fun getAveraged(colorIndex: Int): FloatRGB {
         return FloatRGB(
-                redBuffers[colorIndex].sortedDescending().average().toFloat(),
-                greenBuffers[colorIndex].sortedDescending().average().toFloat(),
-                blueBuffers[colorIndex].sortedDescending().average().toFloat())
+                redBuffers[colorIndex].average().toFloat(),
+                greenBuffers[colorIndex].average().toFloat(),
+                blueBuffers[colorIndex].average().toFloat())
     }
 
     operator fun plusAssign(colors: Collection<RGB>) {
@@ -29,7 +29,7 @@ class ColorBuffer(private val nColors: Int, private val bufferSize: Int) {
         }
 
         // Update bufferIndex
-        bufferIndex = (bufferIndex + 1) % de.milux.ppcolor.BUFFER_SIZE
+        bufferIndex = (bufferIndex + 1) % bufferSize
         // Adjusts bufferFill until it reaches BUFFER_SIZE - 1
         bufferFill = max(bufferFill, bufferIndex + 1)
     }
