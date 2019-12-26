@@ -1,15 +1,13 @@
 package de.milux.ppcolor.debug
 
 import de.milux.ppcolor.HuePoint
+import de.milux.ppcolor.MIN_SATURATION
 import de.milux.ppcolor.N_COLORS
 import de.milux.ppcolor.ml.buckets.BucketCluster
 import de.milux.ppcolor.ml.buckets.HueBucketAlgorithm.N_BUCKETS
-import de.milux.ppcolor.ml.dbscan.DBSCANResult
 import org.slf4j.LoggerFactory
 import java.awt.Color
 import java.awt.Graphics
-import java.awt.Image
-import java.awt.image.BufferedImage
 import javax.swing.JFrame
 import javax.swing.JPanel
 import javax.swing.SwingUtilities
@@ -44,11 +42,11 @@ class DebugFrame : JPanel() {
             g.fillRect(40 + (i * 210), 137, 170, 128)
         }
 
-        huePoints.forEach { p ->
+        huePoints.filter { it.sat >= MIN_SATURATION }.forEach { p ->
             val angle = p.hue * 2 * PI
             val x = (CIRCLE_CENTER_X + cos(angle) * CIRCLE_RADIUS).toInt()
             val y = (CIRCLE_CENTER_Y + sin(angle) * CIRCLE_RADIUS).toInt()
-            val pd = (5 + p.weight * 10).toInt()
+            val pd = (5 + p.y * 10).toInt()
             g.color = Color.getHSBColor(p.hue, 1f, 1f)
             g.fillOval(x, y, pd, pd)
         }
@@ -79,25 +77,6 @@ class DebugFrame : JPanel() {
                 0,
                 360)
 
-//        kMeansResults.forEach {
-//            g.color = Color.getHSBColor(it, 1f, 1f)
-//            g.fillArc(
-//                    CIRCLE_CENTER_X - CIRCLE_RADIUS + 100,
-//                    CIRCLE_CENTER_Y - CIRCLE_RADIUS + 100,
-//                    CIRCLE_RADIUS * 2 - 200,
-//                    CIRCLE_RADIUS * 2 - 200,
-//                    -((it + 0.005) * 360).toInt(),
-//                    3)
-//        }
-//        g.color = Color.BLACK
-//        g.fillArc(
-//                CIRCLE_CENTER_X - CIRCLE_RADIUS + 150,
-//                CIRCLE_CENTER_Y - CIRCLE_RADIUS + 150,
-//                CIRCLE_RADIUS * 2 - 300,
-//                CIRCLE_RADIUS * 2 - 300,
-//                0,
-//                360)
-
         if (bucketWeights.isNotEmpty()) {
             val maxW = bucketWeights.max() ?: throw IllegalStateException()
             bucketWeights.forEachIndexed { i, w ->
@@ -113,10 +92,6 @@ class DebugFrame : JPanel() {
                         ceil(360.toFloat() / N_BUCKETS).toInt())
             }
         }
-
-//        val imageWidth = 400
-//        val imageHeight = (image.getHeight(null).toFloat() * 400f / image.getWidth(null).toFloat()).toInt()
-//        g.drawImage(image, 10, 310, imageWidth, imageHeight, null)
     }
 
     companion object {
@@ -130,11 +105,8 @@ class DebugFrame : JPanel() {
         var colors = Array<Color>(N_COLORS) { Color.BLACK }
         var outColors = Array<Color>(N_COLORS) { Color.BLACK }
         var huePoints = emptyList<HuePoint>()
-        var dbscanResults = emptyList<DBSCANResult>()
-        var kMeansResults = emptyList<Float>()
         var bucketWeights = DoubleArray(0)
         var bucketClusters = emptyList<BucketCluster>()
-        var image: Image = BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB)
         var isRepainting = false
 
         init {

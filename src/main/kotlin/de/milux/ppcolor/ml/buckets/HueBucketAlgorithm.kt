@@ -1,10 +1,7 @@
 package de.milux.ppcolor.ml.buckets
 
-import de.milux.ppcolor.HuePoint
-import de.milux.ppcolor.N_COLORS
-import de.milux.ppcolor.TARGET_WEIGHT_THRESHOLD
+import de.milux.ppcolor.*
 import de.milux.ppcolor.debug.DebugFrame
-import de.milux.ppcolor.normHue
 import org.slf4j.LoggerFactory
 import java.util.*
 import kotlin.math.log2
@@ -12,23 +9,19 @@ import kotlin.math.max
 import kotlin.math.sqrt
 
 object HueBucketAlgorithm {
-    /**
-     * The number of buckets used for this algorithm
-     */
+    /** The number of buckets used for this algorithm */
     const val N_BUCKETS = 512
     /**
      * Since maximum hue distance is 0.5, a value of 2.0 means the whole circle influences the bucket.
      * A value of 4.0 means that at most half the circle (one quarter on either side) influences the bucket.
      */
     private const val DISTANCE_MULTIPLIER = 16.0
-    /**
-     * The threshold defining a "slope" of a cluster
-     */
+    /** The threshold defining the maximum rise in a cluster slope */
     private const val BORDER_THRESHOLD = 0.9
-    /**
-     * An additional factor to boost weakly represented colors
-     */
-    private const val WEAK_COLOR_BOOST = 16.0
+    /** The threshold for the minimum weight that is encapsulated by the cluster borders */
+    private const val MIN_INNER_WEIGHT = 0.7
+    /** An additional factor to boost weakly represented colors */
+    private const val WEAK_COLOR_BOOST = 8.0
 
     private lateinit var multiplyLookup: DoubleArray
     private val logger = LoggerFactory.getLogger(HueBucketAlgorithm::class.java)!!
@@ -53,11 +46,14 @@ object HueBucketAlgorithm {
         // Calculate the extended bucket weights and pass them to the debug visualization
         DebugFrame.bucketWeights = extBucketWeights
         // Find clusters
-        val targetWeight = extBucketWeights.sum() * TARGET_WEIGHT_THRESHOLD
+        val extBucketWeightSum = extBucketWeights.sum()
+        val targetWeight = extBucketWeightSum * TARGET_WEIGHT_THRESHOLD
+        val nClustersTargetWeight = extBucketWeightSum * TARGET_WEIGHT_THRESHOLD_N_CLUSTERS
         var collectedWeight = .0
         val blockedBuckets = BooleanArray(N_BUCKETS) { false }
         val clusters = LinkedList<BucketCluster>()
-        while (collectedWeight < targetWeight && clusters.size < N_COLORS) {
+        while (collectedWeight < targetWeight
+                && (clusters.size < N_COLORS || collectedWeight < nClustersTargetWeight)) {
             val bucketCluster = getCluster(extBucketWeights, blockedBuckets)
             if (bucketCluster == null) {
                 break
@@ -83,50 +79,66 @@ object HueBucketAlgorithm {
 
     private fun getCluster(bucketWeights: DoubleArray, blockedBuckets: BooleanArray): BucketCluster? {
         var clusterWeight = .0
-        var clusterBorderLeft: Float? = null
-        var clusterBorderRight: Float? = null
+        var limitLeft = 0
+        var limitRight = 0
         val maxBucket = bucketWeights
                 .withIndex()
                 .filter { !blockedBuckets[it.index] }
                 .maxBy { it.value } ?: return null
         // Black main bucket
         blockedBuckets[maxBucket.index] = true
-        // Find left border and block whole slope
-        val borderWeight = maxBucket.value * BORDER_THRESHOLD
-        var posLeft = leftIndex(maxBucket.index - 1)
-        var posWeight = bucketWeights[posLeft]
-        var prevWeight = bucketWeights[maxBucket.index]
-        while (posWeight >= borderWeight || posWeight < prevWeight || exploreLeft(posLeft, bucketWeights)) {
-            if (clusterBorderLeft == null && posWeight < borderWeight || blockedBuckets[posLeft]) {
-                clusterBorderLeft = rightIndex(posLeft + 1).toFloat() / N_BUCKETS
-            }
-            if (blockedBuckets[posLeft]) {
+        // Find left limit
+        var pos = leftIndex(maxBucket.index - 1)
+        var posWeight = bucketWeights[pos]
+        var prevWeight = maxBucket.value
+        while (posWeight < prevWeight || exploreLeft(pos, bucketWeights)) {
+            if (blockedBuckets[pos]) {
                 break
             }
+            limitLeft = pos
             clusterWeight += posWeight
-            blockedBuckets[posLeft] = true
+            blockedBuckets[pos] = true
             prevWeight = posWeight
-            posLeft = leftIndex(posLeft - 1)
-            posWeight = bucketWeights[posLeft]
+            pos = leftIndex(pos - 1)
+            posWeight = bucketWeights[pos]
         }
-        // Find right border
-        var posRight = rightIndex(maxBucket.index + 1)
-        posWeight = bucketWeights[posRight]
-        prevWeight = bucketWeights[maxBucket.index]
-        while (posWeight >= borderWeight || posWeight < prevWeight || exploreRight(posRight, bucketWeights)) {
-            if (clusterBorderRight == null && posWeight < borderWeight || blockedBuckets[posRight]) {
-                clusterBorderRight = leftIndex(posRight - 1).toFloat() / N_BUCKETS
-            }
-            if (blockedBuckets[posRight]) {
+        limitLeft = leftIndex(limitLeft - 1)
+        // Find right limit
+        pos = rightIndex(maxBucket.index + 1)
+        posWeight = bucketWeights[pos]
+        prevWeight = maxBucket.value
+        while (posWeight < prevWeight || exploreRight(pos, bucketWeights)) {
+            if (blockedBuckets[pos]) {
                 break
             }
+            limitRight = pos
             clusterWeight += posWeight
-            blockedBuckets[posRight] = true
+            blockedBuckets[pos] = true
             prevWeight = posWeight
-            posRight = rightIndex(posRight + 1)
-            posWeight = bucketWeights[posRight]
+            pos = rightIndex(pos + 1)
+            posWeight = bucketWeights[pos]
         }
-        return BucketCluster(clusterWeight, clusterBorderLeft!!, clusterBorderRight!!)
+        limitRight = rightIndex(limitRight + 1)
+        // Find borders by collecting at least minWeight
+        val minWeight = clusterWeight * MIN_INNER_WEIGHT
+        var leftBorder = leftIndex(maxBucket.index - 1)
+        var rightBorder = rightIndex(maxBucket.index + 1)
+        var innerWeight = maxBucket.value
+        while (innerWeight < minWeight) {
+            if (leftBorder != limitLeft &&
+                    (bucketWeights[leftBorder] >= bucketWeights[rightBorder] || rightBorder == limitRight)) {
+                innerWeight += bucketWeights[leftBorder]
+                leftBorder = leftIndex(leftBorder - 1)
+            } else if (rightBorder != limitRight &&
+                    (bucketWeights[rightBorder] > bucketWeights[leftBorder] || leftBorder == limitLeft)) {
+                innerWeight += bucketWeights[rightBorder]
+                rightBorder = rightIndex(rightBorder + 1)
+            }
+        }
+        return BucketCluster(
+                clusterWeight,
+                leftBorder.toFloat() / N_BUCKETS,
+                rightBorder.toFloat() / N_BUCKETS)
     }
 
     /**
@@ -178,8 +190,10 @@ object HueBucketAlgorithm {
     private fun getBucketWeights(hpList: List<HuePoint>): DoubleArray {
         val weights = DoubleArray(N_BUCKETS)
         hpList.forEach {
-            val bucket = (normHue(it.hue) * N_BUCKETS).toInt()
-            weights[bucket] += it.weight
+            if (it.sat >= MIN_SATURATION) {
+                val bucket = (it.hue * N_BUCKETS).toInt()
+                weights[bucket] += it.y
+            }
         }
         val normFactor = 2.0 / weights.max()!!
         return weights.map { max(0.0, log2(it * normFactor * WEAK_COLOR_BOOST)) }.toDoubleArray()
@@ -202,7 +216,7 @@ object HueBucketAlgorithm {
             logger.error("Found maxWeight ${hpList.size}, which is an illegal state!", IllegalStateException())
             return smoothedWeights.toDoubleArray()
         }
-        // Normalize weights before output
+        // Normalize weights to range [0;1) before output
         return smoothedWeights.map { it / maxWeight }.toDoubleArray()
     }
 

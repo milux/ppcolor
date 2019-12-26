@@ -2,6 +2,7 @@ package de.milux.ppcolor
 
 import de.milux.ppcolor.debug.DebugFrame
 import de.milux.ppcolor.midi.MidiThread
+import de.milux.ppcolor.ml.buckets.BucketBuffer
 import de.milux.ppcolor.ml.buckets.HueBucketAlgorithm
 import org.slf4j.LoggerFactory
 import java.awt.GraphicsEnvironment
@@ -19,11 +20,13 @@ const val MIN_ROUND_TIME = 10L
 // This is MIDI output (and color adaptation) frequency
 const val MIDI_ROUND_TIME = 10L
 // This multiplier controls the MIDI output color speed-stability-trade-off, higher is faster
-const val MIDI_STEP_MULTIPLIER = 100.0
+const val MIDI_STEP_MULTIPLIER = 70.0
 // This is the minimum adaptation speed of the MIDI output color
-const val MIDI_MIN_STEP = .05
+const val MIDI_MIN_STEP = .1
 // The size of the buffer for smoothing of detected colors
-const val BUFFER_SIZE = 500 / MIN_ROUND_TIME.toInt()
+const val BUFFER_SIZE = 1
+// The size of the buffer for bucket algorithm smoothing
+const val BUCKET_AVG_BUFFER_SIZE = 50
 // The size of the buffer used to calculate the "pace" of color changes
 const val DELTA_BUFFER_SIZE = 3000 / MIN_ROUND_TIME.toInt()
 // Horizontal grid resolution to collect samples from frames
@@ -36,12 +39,12 @@ const val TARGET_SCREEN = 1
 const val MIDI_DEV_NAME = "Komplete Audio 6"
 // Number of output colors
 const val N_COLORS = 2
-// Grey frame detection: Defines the minimum color weight of at least one pixel to regard a frame as colored
-const val MIN_WEIGHT = .05
-// The minimum weight share to regard a cluster as a valid cluster
-const val MIN_CLUSTER_WEIGHT = .1
+// Grey frame detection: Defines the minimum saturation of at least one pixel to regard a frame as colored
+const val MIN_SATURATION = .1
 // The minimum weight share of all buckets that must be collected into clusters
-const val TARGET_WEIGHT_THRESHOLD = .9
+const val TARGET_WEIGHT_THRESHOLD = .8
+// The minimum weight share of all buckets that must be contained to use only N_COLOR clusters
+const val TARGET_WEIGHT_THRESHOLD_N_CLUSTERS = 0.6
 
 const val GRID_POINTS = STEPS_X * STEPS_Y
 val frameLock = Object()
@@ -79,6 +82,7 @@ fun main() {
     var run = 0L
     val executor = Executors.newFixedThreadPool(max(Runtime.getRuntime().availableProcessors() - 2, 1))
 
+    val bucketBuffer = BucketBuffer(BUCKET_AVG_BUFFER_SIZE)
     var lastHuePoints = emptyList<HuePoint>()
     // Prewarm delta information
     val deltaBuffer = LinkedList<Double>().also { it += 1e6 }
@@ -107,14 +111,14 @@ fun main() {
         }
 
         // If any valid pixels have been found
-        if ((huePoints.maxBy { it.weight } ?: HuePoint(.0f, .0)).weight >= MIN_WEIGHT) {
+        if ((huePoints.maxBy { it.sat }?.sat ?: 0f) >= MIN_SATURATION) {
             var frameDelta = 0.0
             if (lastHuePoints.isNotEmpty()) {
                 var validSamples = 0
                 huePoints.forEachIndexed { i, hp ->
                     val lastHp = lastHuePoints[i]
-                    val combinedWeight = sqrt(hp.weight * lastHp.weight)
-                    if (combinedWeight > MIN_WEIGHT) {
+                    val combinedWeight = sqrt(hp.y * lastHp.y)
+                    if (combinedWeight > MIN_SATURATION) {
                         validSamples += 1
                         frameDelta += hueDistance(hp.hue, lastHp.hue)
                     }
@@ -128,7 +132,7 @@ fun main() {
             }
 
             val adaptationFactor = deltaSum / DELTA_BUFFER_SIZE * MIDI_STEP_MULTIPLIER
-            midiThread.midiStep = adaptationFactor
+            midiThread.midiStep = sqrt(adaptationFactor)
             if (logger.isTraceEnabled) {
                 logger.trace("Frame delta: $frameDelta; Adaptation pace ${midiThread.midiStep}")
             }
@@ -137,14 +141,14 @@ fun main() {
             }
 
             val extBucketWeights = HueBucketAlgorithm.getExtendedBucketWeights(huePoints)
-            val bucketHues = HueBucketAlgorithm.getDominantHueList(extBucketWeights)
+            bucketBuffer += extBucketWeights
+            val bucketHues = HueBucketAlgorithm.getDominantHueList(bucketBuffer.average())
             if (bucketHues.isNotEmpty()) {
                 logger.info("Bucket algorithm results: ${bucketHues.joinToString()}")
             }
             midiThread.submitHueValues(bucketHues)
 
             if (DebugFrame.logger.isDebugEnabled) {
-                DebugFrame.image = captureThread.image
                 DebugFrame.huePoints = ArrayList(huePoints)
                 DebugFrame.repaint()
             }

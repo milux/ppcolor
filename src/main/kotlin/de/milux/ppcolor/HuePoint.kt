@@ -1,23 +1,19 @@
 package de.milux.ppcolor
 
-import de.milux.ppcolor.ml.dbscan.Weighable
-import org.apache.commons.math3.ml.clustering.Clusterable
-
-class HuePoint(val hue: Float, override val weight: Double) : Clusterable, Weighable {
-    override fun getPoint(): DoubleArray {
-        return DoubleArray(1) { hue.toDouble() }
-    }
-
+class HuePoint(val hue: Float, val sat: Float, val y: Double) {
     companion object {
+        data class HueSat(val hue: Float, val sat: Float)
+
         fun fromRGB(rgb: RGB) = fromRGB(rgb.red, rgb.green, rgb.blue)
 
         private fun fromRGB(r: Int, g: Int, b: Int): HuePoint {
+            val hs = hueSatFromRGB(r, g, b)
             // Y component of YCbCr, see https://en.wikipedia.org/wiki/YCbCr
             val y = (0.299 * r + 0.587 * g + 0.114 * b) / 256
-            return HuePoint(hueFromRGB(r, g, b), y * y)
+            return HuePoint(hs.hue, hs.sat, y)
         }
 
-        private fun hueFromRGB(r: Int, g: Int, b: Int): Float {
+        private fun hueSatFromRGB(r: Int, g: Int, b: Int): HueSat {
             var cMax = if (r > g) r else g
             if (b > cMax) {
                 cMax = b
@@ -27,7 +23,7 @@ class HuePoint(val hue: Float, override val weight: Double) : Clusterable, Weigh
                 cMin = b
             }
             return if (cMax == 0 || cMax == cMin) {
-                0f
+                return HueSat(0f, 0f)
             } else {
                 val hue = when {
                     r == cMax -> {
@@ -40,7 +36,7 @@ class HuePoint(val hue: Float, override val weight: Double) : Clusterable, Weigh
                         4.0f + (r - g).toFloat() / (cMax - cMin).toFloat()
                     }
                 } / 6.0f
-                if (hue < 0f) hue + 1f else hue
+                HueSat(if (hue < 0f) hue + 1f else hue, (cMax - cMin).toFloat() / 256f)
             }
         }
     }
