@@ -15,35 +15,35 @@ import javax.imageio.ImageIO
 import kotlin.math.*
 import kotlin.system.exitProcess
 
-// This is the frame grabber (and thus also the main loop) frequency. FPS = 1000 / MIN_ROUND_TIME
+/** This is the frame grabber (and thus also the main loop) frequency. FPS = 1000 / MIN_ROUND_TIME */
 const val MIN_ROUND_TIME = 10L
-// This is MIDI output (and color adaptation) frequency
+/** This is MIDI output (and color adaptation) frequency */
 const val MIDI_ROUND_TIME = 10L
-// This multiplier controls the MIDI output color speed-stability-trade-off, higher is faster
+/** This multiplier controls the MIDI output color speed-stability-trade-off, higher is faster */
 const val MIDI_STEP_MULTIPLIER = 100.0
-// This is the minimum adaptation speed of the MIDI output color
+/** This is the minimum adaptation speed of the MIDI output color */
 const val MIDI_MIN_STEP = 0.1
-// The size of the buffer for smoothing of detected colors
+/** The size of the buffer for smoothing of detected colors */
 const val BUFFER_SIZE = 1
-// The size of the buffer for bucket algorithm smoothing
+/** The size of the buffer for bucket algorithm smoothing */
 const val BUCKET_AVG_BUFFER_SIZE = 50
-// The size of the buffer used to calculate the "pace" of color changes
+/** The size of the buffer used to calculate the "pace" of color changes */
 const val DELTA_BUFFER_SIZE = 3000 / MIN_ROUND_TIME.toInt()
-// Horizontal grid resolution to collect samples from frames
+/** Horizontal grid resolution to collect samples from frames */
 const val STEPS_X = 64
-// Vertical grid resolution to collect samples from frames
+/** Vertical grid resolution to collect samples from frames */
 const val STEPS_Y = 36
-// The screen to target
+/** The screen to target */
 const val TARGET_SCREEN = 1
-// The name of the MIDI device to use for color output
+/** The name of the MIDI device to use for color output */
 const val MIDI_DEV_NAME = "Komplete Audio 6"
-// Number of output colors
+/** Number of output colors */
 const val N_COLORS = 2
-// Defines the minimum saturation of a pixel to regard it as colored
+/** Defines the minimum saturation of a pixel to regard it as colored */
 const val MIN_SATURATION = 0.1
-// The minimum weight share of all buckets that must be collected into clusters
+/** The minimum weight share of all buckets that must be collected into clusters */
 const val TARGET_WEIGHT_THRESHOLD = 0.8
-// The minimum weight share of all buckets that must be contained to use only N_COLOR clusters
+/** The minimum weight share of all buckets that must be contained to use only N_COLOR clusters */
 const val TARGET_WEIGHT_THRESHOLD_N_CLUSTERS = 0.6
 
 const val GRID_POINTS = STEPS_X * STEPS_Y
