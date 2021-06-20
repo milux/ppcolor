@@ -1,6 +1,6 @@
 package de.milux.ppcolor
 
-class HuePoint(val hue: Float, val sat: Float, val y: Double) {
+data class HuePoint(val hue: Float, val sat: Float, val y: Double) {
     companion object {
         data class HueSat(val hue: Float, val sat: Float)
 

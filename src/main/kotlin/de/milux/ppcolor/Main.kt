@@ -20,15 +20,13 @@ const val MIN_ROUND_TIME = 10L
 /** This is MIDI output (and color adaptation) frequency */
 const val MIDI_ROUND_TIME = 10L
 /** This multiplier controls the MIDI output color speed-stability-trade-off, higher is faster */
-const val MIDI_STEP_MULTIPLIER = 100.0
+const val MIDI_STEP_MULTIPLIER = 2000.0
 /** This is the minimum adaptation speed of the MIDI output color */
 const val MIDI_MIN_STEP = 0.1
-/** The size of the buffer for smoothing of detected colors */
-const val BUFFER_SIZE = 1
 /** The size of the buffer for bucket algorithm smoothing */
 const val BUCKET_AVG_BUFFER_SIZE = 50
 /** The size of the buffer used to calculate the "pace" of color changes */
-const val DELTA_BUFFER_SIZE = 3000 / MIN_ROUND_TIME.toInt()
+const val DELTA_BUFFER_SIZE = 2000 / MIN_ROUND_TIME.toInt()
 /** Horizontal grid resolution to collect samples from frames */
 const val STEPS_X = 64
 /** Vertical grid resolution to collect samples from frames */
@@ -42,9 +40,7 @@ const val N_COLORS = 2
 /** Defines the minimum saturation of a pixel to regard it as colored */
 const val MIN_SATURATION = 0.1
 /** The minimum weight share of all buckets that must be collected into clusters */
-const val TARGET_WEIGHT_THRESHOLD = 0.8
-/** The minimum weight share of all buckets that must be contained to use only N_COLOR clusters */
-const val TARGET_WEIGHT_THRESHOLD_N_CLUSTERS = 0.6
+const val TARGET_WEIGHT_THRESHOLD = 0.95
 
 const val GRID_POINTS = STEPS_X * STEPS_Y
 val frameLock = Object()
@@ -111,14 +107,14 @@ fun main() {
         }
 
         // If any valid pixels have been found
-        if ((huePoints.maxBy { it.sat }?.sat ?: 0f) >= MIN_SATURATION) {
+        if ((huePoints.maxByOrNull { it.sat }?.sat ?: 0f) >= MIN_SATURATION) {
             var frameDelta = 0.0
             if (lastHuePoints.isNotEmpty()) {
                 var validSamples = 0
                 huePoints.forEachIndexed { i, hp ->
                     val lastHp = lastHuePoints[i]
-                    val combinedWeight = sqrt(hp.y * lastHp.y)
-                    if (combinedWeight > MIN_SATURATION) {
+                    val combinedSaturation = sqrt(hp.sat * lastHp.sat)
+                    if (combinedSaturation > MIN_SATURATION) {
                         validSamples += 1
                         frameDelta += hueDistance(hp.hue, lastHp.hue)
                     }
@@ -131,8 +127,12 @@ fun main() {
                 deltaSum -= deltaBuffer.removeFirst()
             }
 
+            // Compute the clusters
+            bucketBuffer += HueBucketAlgorithm.getExtendedBucketWeights(huePoints)
+            val clusteringResult = HueBucketAlgorithm.getHueClusters(bucketBuffer.average())
+
             val adaptationFactor = deltaSum / DELTA_BUFFER_SIZE * MIDI_STEP_MULTIPLIER
-            midiThread.midiStep = sqrt(adaptationFactor)
+            midiThread.midiStep = adaptationFactor.pow(0.7) * clusteringResult.confidence.pow(2)
             if (logger.isTraceEnabled) {
                 logger.trace("Frame delta: $frameDelta; Adaptation pace ${midiThread.midiStep}")
             }
@@ -140,13 +140,10 @@ fun main() {
                 lastHuePoints = huePoints
             }
 
-            val extBucketWeights = HueBucketAlgorithm.getExtendedBucketWeights(huePoints)
-            bucketBuffer += extBucketWeights
-            val bucketHues = HueBucketAlgorithm.getDominantHueList(bucketBuffer.average())
-            if (bucketHues.isNotEmpty()) {
-                logger.info("Bucket algorithm results: ${bucketHues.joinToString()}")
+            if (clusteringResult.clusters.isNotEmpty()) {
+                logger.info("Bucket algorithm results: ${clusteringResult.clusters.joinToString()}")
             }
-            midiThread.submitHueValues(bucketHues)
+            midiThread.submitHueClusters(clusteringResult.clusters)
 
             if (DebugFrame.logger.isDebugEnabled) {
                 DebugFrame.huePoints = ArrayList(huePoints)

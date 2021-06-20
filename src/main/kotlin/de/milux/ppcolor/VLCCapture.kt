@@ -52,7 +52,7 @@ class VLCCapture(screenDevice: GraphicsDevice) : Thread() {
         player.media().play("screen://", *options)
     }
 
-    private inner class RenderCallback internal constructor() :
+    private inner class RenderCallback :
             RenderCallbackAdapter((image.raster.dataBuffer as DataBufferInt).data) {
 
         public override fun onDisplay(mediaPlayer: MediaPlayer, data: IntArray) {

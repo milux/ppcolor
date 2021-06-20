@@ -29,17 +29,20 @@ class DebugFrame : JPanel() {
     override fun paint(g: Graphics) {
         super.paint(g)
 
-        outColors.forEachIndexed { i, color ->
+        colors.zip(outColors).forEachIndexed { i, (color, outColor) ->
             g.color = Color.RED
-            g.fillRect(10 + (i * 210), 10, 10, color.red)
+            g.fillRect(10 + (i * 210), 10, 10, color.red / 2)
+            g.fillRect(10 + (i * 210), 138, 10, outColor.red / 2)
             g.color = Color.GREEN
-            g.fillRect(20 + (i * 210), 10, 10, color.green)
+            g.fillRect(20 + (i * 210), 10, 10, color.green / 2)
+            g.fillRect(20 + (i * 210), 138, 10, outColor.green / 2)
             g.color = Color.BLUE
-            g.fillRect(30 + (i * 210), 10, 10, color.blue)
-            g.color = colors[i]
-            g.fillRect(40 + (i * 210), 10, 170, 127)
+            g.fillRect(30 + (i * 210), 10, 10, color.blue / 2)
+            g.fillRect(30 + (i * 210), 138, 10, outColor.blue / 2)
             g.color = color
-            g.fillRect(40 + (i * 210), 137, 170, 128)
+            g.fillRect(40 + (i * 210), 10, 170, 127)
+            g.color = outColor
+            g.fillRect(40 + (i * 210), 138, 170, 127)
         }
 
         huePoints.filter { it.sat >= MIN_SATURATION }.forEach { p ->
@@ -78,7 +81,7 @@ class DebugFrame : JPanel() {
                 360)
 
         if (bucketWeights.isNotEmpty()) {
-            val maxW = bucketWeights.max() ?: throw IllegalStateException()
+            val maxW = bucketWeights.maxOrNull() ?: throw IllegalStateException("bucketWeights must not be empty!")
             bucketWeights.forEachIndexed { i, w ->
                 val hue = i.toFloat() / N_BUCKETS
                 val radius = (300 * w / maxW).toInt()

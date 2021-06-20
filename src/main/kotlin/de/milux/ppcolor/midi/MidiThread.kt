@@ -8,11 +8,13 @@ import javax.sound.midi.MidiSystem
 import javax.sound.midi.ShortMessage
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
 
 class MidiThread : Thread() {
-    private val buffer = ColorBuffer(N_COLORS, BUFFER_SIZE)
     private val outputColors = Array(N_COLORS) { FloatRGB(0f, 0f, 0f) }
-    private var lastTargetColors: List<RGB> = emptyList()
+    private val targetColors = Array(N_COLORS) { RGB(0, 0, 0) }
+    private var orderedTargetWeights = DoubleArray(N_COLORS)
+    private var lastTargetHues = FloatArray(N_COLORS).toList()
     var midiStep = .0
 
     init {
@@ -23,10 +25,9 @@ class MidiThread : Thread() {
         start()
     }
 
-    fun submitHueValues(hueValues: FloatArray) {
-        if (hueValues.isEmpty()) {
-            // Empty array signals unchanged inputs, replay the last target colors and return
-            buffer += lastTargetColors
+    fun submitHueClusters(clusters: List<HueCluster>) {
+        if (clusters.isEmpty()) {
+            // Empty array signals unchanged inputs
             return
         }
         val medianHues: FloatArray
@@ -37,19 +38,24 @@ class MidiThread : Thread() {
             }
         }
         // Create cost matrix with medians as workers and target values as jobs
-        val costMatrix = Array(N_COLORS) { DoubleArray(hueValues.size) }
+        val costMatrix = Array(N_COLORS) { DoubleArray(clusters.size) }
         for (m in 0 until N_COLORS) {
-            for (t in hueValues.indices) {
-                costMatrix[m][t] = hueDistance(medianHues[m], hueValues[t]).toDouble()
+            for (t in clusters.indices) {
+                costMatrix[m][t] = (
+                        hueDistance(lastTargetHues[m], clusters[t].hue) * 0.01
+                                + hueDistance(medianHues[m], clusters[t].hue)
+                                + 0.1
+                        ) / clusters[t].weight.pow(2)
             }
         }
         // Create hue List with ideal order (minimum difference between median and target hue over all indices)
         val hunResult = HungarianAlgorithm(costMatrix).execute()
-        val orderedTargetHues = hunResult.map { hueValues[it] }
-        logger.info("Learned hue centers: ${orderedTargetHues.joinToString { it.toString() }}")
-        // Push new target colors to buffer
-        lastTargetColors = orderedTargetHues.map { RGB.fromHSB(it) }
-        buffer += lastTargetColors
+        val orderedTargetHues = hunResult.map { clusters[it].hue }
+        lastTargetHues = orderedTargetHues
+        hunResult.map { clusters[it].weight }.forEachIndexed { i, w -> orderedTargetWeights[i] = w }
+        logger.info("Learned clusters: ${orderedTargetHues.joinToString { it.toString() }}")
+        // Apply new target colors
+        orderedTargetHues.forEachIndexed { i, hue -> targetColors[i] = RGB.fromHSB(hue) }
     }
 
     private fun sendNotes(notes: Array<MidiNote>) {
@@ -75,17 +81,17 @@ class MidiThread : Thread() {
     override fun run() {
         val notes = Array(N_COLORS * 3) { MidiNote(0, 0) }
         while (true) {
-            val midiMaxStep = max(midiStep, MIDI_MIN_STEP).toFloat()
             val time = System.currentTimeMillis()
             outputColors.forEachIndexed { i, outputColor ->
-                val average = buffer.getAveraged(i)
+                val average = targetColors[i]
+                val maxStep = (max(midiStep, MIDI_MIN_STEP) * orderedTargetWeights[i]).toFloat()
                 val rDiff = outputColor.red - average.red
                 val gDiff = outputColor.green - average.green
                 val bDiff = outputColor.blue - average.blue
                 val newOutputColor = FloatRGB(
-                        outputColor.red - (if (rDiff > 0) min(rDiff, midiMaxStep) else max(rDiff, -midiMaxStep)),
-                        outputColor.green - (if (gDiff > 0) min(gDiff, midiMaxStep) else max(gDiff, -midiMaxStep)),
-                        outputColor.blue - (if (bDiff > 0) min(bDiff, midiMaxStep) else max(bDiff, -midiMaxStep))
+                        outputColor.red - (if (rDiff > 0) min(rDiff, maxStep) else max(rDiff, -maxStep)),
+                        outputColor.green - (if (gDiff > 0) min(gDiff, maxStep) else max(gDiff, -maxStep)),
+                        outputColor.blue - (if (bDiff > 0) min(bDiff, maxStep) else max(bDiff, -maxStep))
                 )
                 outputColors[i] = newOutputColor
                 if (DebugFrame.logger.isDebugEnabled) {

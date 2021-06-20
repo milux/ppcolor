@@ -17,7 +17,7 @@ object HueBucketAlgorithm {
      */
     private const val DISTANCE_MULTIPLIER = 16.0
     /** The threshold defining the maximum rise in a cluster slope */
-    private const val BORDER_THRESHOLD = 0.9
+    private const val BORDER_THRESHOLD = 0.95
     /** The threshold for the minimum weight that is encapsulated by the cluster borders */
     private const val MIN_INNER_WEIGHT = 0.7
     /** An additional factor to boost weakly represented colors */
@@ -42,18 +42,16 @@ object HueBucketAlgorithm {
     }
 
 
-    fun getDominantHueList(extBucketWeights: DoubleArray): FloatArray {
+    fun getHueClusters(extBucketWeights: DoubleArray): ClusteringResult {
         // Calculate the extended bucket weights and pass them to the debug visualization
         DebugFrame.bucketWeights = extBucketWeights
         // Find clusters
         val extBucketWeightSum = extBucketWeights.sum()
         val targetWeight = extBucketWeightSum * TARGET_WEIGHT_THRESHOLD
-        val nClustersTargetWeight = extBucketWeightSum * TARGET_WEIGHT_THRESHOLD_N_CLUSTERS
         var collectedWeight = .0
         val blockedBuckets = BooleanArray(N_BUCKETS) { false }
         val clusters = LinkedList<BucketCluster>()
-        while (collectedWeight < targetWeight
-                && (clusters.size < N_COLORS || collectedWeight < nClustersTargetWeight)) {
+        while (collectedWeight < targetWeight) {
             val bucketCluster = getCluster(extBucketWeights, blockedBuckets)
             if (bucketCluster == null) {
                 break
@@ -62,19 +60,22 @@ object HueBucketAlgorithm {
                 collectedWeight += bucketCluster.weight
             }
         }
+        logger.info("Weight confidence: ${collectedWeight / extBucketWeightSum}")
         DebugFrame.bucketClusters = clusters
         // TODO: Implement support for more than 2 colors here! (Use D'Hondt method?)
-        return when {
+        val hueClusters = when {
             clusters.isEmpty() -> {
-                FloatArray(0)
+                emptyList()
             }
             clusters.size < N_COLORS -> {
-                listOf(clusters[0].leftBorder, clusters[0].rightBorder).toFloatArray()
+                listOf(clusters[0].leftBorder, clusters[0].rightBorder)
+                        .map { HueCluster(it, clusters[0].weight / extBucketWeightSum) }
             }
             else -> {
-                clusters.map { it.center }.toFloatArray()
+                clusters.map { HueCluster(it.center, it.weight / extBucketWeightSum) }
             }
         }
+        return ClusteringResult(hueClusters, collectedWeight / extBucketWeightSum)
     }
 
     private fun getCluster(bucketWeights: DoubleArray, blockedBuckets: BooleanArray): BucketCluster? {
@@ -84,7 +85,7 @@ object HueBucketAlgorithm {
         val maxBucket = bucketWeights
                 .withIndex()
                 .filter { !blockedBuckets[it.index] }
-                .maxBy { it.value } ?: return null
+                .maxByOrNull { it.value } ?: return null
         // Black main bucket
         blockedBuckets[maxBucket.index] = true
         // Find left limit
@@ -195,8 +196,9 @@ object HueBucketAlgorithm {
                 weights[bucket] += it.y
             }
         }
-        val normFactor = 2.0 / weights.max()!!
-        return weights.map { max(0.0, log2(it * normFactor * WEAK_COLOR_BOOST)) }.toDoubleArray()
+        val maxWeight = weights.maxOrNull() ?: throw IllegalStateException("weights must not be empty!")
+        val normFactor = (2.0 / maxWeight) * WEAK_COLOR_BOOST
+        return weights.map { max(0.0, log2(it * normFactor)) }.toDoubleArray()
     }
 
     fun getExtendedBucketWeights(hpList: List<HuePoint>): DoubleArray {
@@ -211,9 +213,9 @@ object HueBucketAlgorithm {
             }
         }
         val smoothedWeights = extWeights.map { sqrt(it) }
-        val maxWeight = extWeights.max()!!
+        val maxWeight = extWeights.maxOrNull() ?: throw IllegalStateException("extWeights must not be empty!")
         if (maxWeight.isNaN() || maxWeight == 0.0) {
-            logger.error("Found maxWeight ${hpList.size}, which is an illegal state!", IllegalStateException())
+            logger.error("Found maxWeight $maxWeight, which is an illegal state!", IllegalStateException())
             return smoothedWeights.toDoubleArray()
         }
         // Normalize weights to range [0;1) before output
